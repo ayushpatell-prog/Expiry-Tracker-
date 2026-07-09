@@ -15,14 +15,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.example.expirytracker1.screens.AssistantScreen
-import com.example.expirytracker1.screens.HomeScreen
-import com.example.expirytracker1.screens.InventoryScreen
-import com.example.expirytracker1.screens.LoginScreen
-import com.example.expirytracker1.screens.ProfileScreen
-import com.example.expirytracker1.screens.ScannerScreen
-import com.example.expirytracker1.screens.SettingsScreen
-import com.example.expirytracker1.screens.SignUpScreen
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import com.example.expirytracker1.screens.*
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 
 class MainActivity : ComponentActivity() {
@@ -33,26 +28,49 @@ class MainActivity : ComponentActivity() {
             var darkMode by remember { mutableStateOf(false) }
             ExpiryTracker1Theme(darkTheme = darkMode) {
                 var currentScreen by remember { mutableStateOf("LOGIN") }
-                
-                when (currentScreen) {
-                    "LOGIN" -> LoginScreen(
-                        onSignUpClick = { currentScreen = "SIGNUP" },
-                        onLoginSuccess = { currentScreen = "HOME" }
-                    )
-                    "SIGNUP" -> SignUpScreen(
-                        onLoginClick = { currentScreen = "LOGIN" },
-                        onSignUpSuccess = { currentScreen = "HOME" }
-                    )
-                    "HOME" -> HomeScreen(onNavigate = { currentScreen = it })
-                    "INVENTORY" -> InventoryScreen(onNavigate = { currentScreen = it })
-                    "ASSISTANT" -> AssistantScreen(onNavigate = { currentScreen = it })
-                    "SETTINGS" -> SettingsScreen(onNavigate = { currentScreen = it })
-                    "PROFILE" -> ProfileScreen(
-                        darkMode = darkMode,
-                        onDarkModeChange = { darkMode = it },
-                        onNavigate = { currentScreen = it }
-                    )
-                    "SCANNER" -> ScannerScreen(onNavigateBack = { currentScreen = "HOME" })
+
+                AnimatedContent(
+                    targetState = currentScreen,
+                    label = "ScreenTransition",
+                    transitionSpec = {
+                        if (targetState == "HOME" && (initialState == "LOGIN" || initialState == "SIGNUP")) {
+                            (fadeIn(animationSpec = tween(500)) + scaleIn(initialScale = 0.8f))
+                                .togetherWith(fadeOut(animationSpec = tween(500)))
+                        } else if (targetState == "SCANNER") {
+                            (slideInVertically(animationSpec = tween(400)) { it } + fadeIn())
+                                .togetherWith(fadeOut(animationSpec = tween(400)))
+                        } else if (initialState == "SCANNER") {
+                            (fadeIn(animationSpec = tween(400)))
+                                .togetherWith(slideOutVertically(animationSpec = tween(400)) { it } + fadeOut())
+                        } else {
+                            fadeIn(animationSpec = tween(300))
+                                .togetherWith(fadeOut(animationSpec = tween(300)))
+                        }
+                    }
+                ) { screen ->
+                    when (screen) {
+                        "LOGIN" -> LoginScreen(
+                            onSignUpClick = { currentScreen = "SIGNUP" },
+                            onLoginSuccess = { currentScreen = "HOME" }
+                        )
+
+                        "SIGNUP" -> SignUpScreen(
+                            onLoginClick = { currentScreen = "LOGIN" },
+                            onSignUpSuccess = { currentScreen = "HOME" }
+                        )
+
+                        "HOME" -> HomeScreen(onNavigate = { currentScreen = it })
+                        "INVENTORY" -> InventoryScreen(onNavigate = { currentScreen = it })
+                        "ASSISTANT" -> AssistantScreen(onNavigate = { currentScreen = it })
+                        "SETTINGS" -> SettingsScreen(onNavigate = { currentScreen = it })
+                        "PROFILE" -> ProfileScreen(
+                            darkMode = darkMode,
+                            onDarkModeChange = { darkMode = it },
+                            onNavigate = { currentScreen = it }
+                        )
+
+                        "SCANNER" -> ScannerScreen(onNavigateBack = { currentScreen = "HOME" })
+                    }
                 }
             }
         }
