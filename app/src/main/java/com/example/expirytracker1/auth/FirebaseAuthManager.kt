@@ -1,10 +1,24 @@
 package com.example.expirytracker1.auth
 
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
+import com.google.firebase.appcheck.FirebaseAppCheck
+import com.google.firebase.FirebaseApp
 
 object FirebaseAuthManager {
 
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
+
+    fun initializeAppCheck(context: android.content.Context) {
+        try {
+            val firebaseAppCheck = FirebaseAppCheck.getInstance()
+            firebaseAppCheck.installAppCheckProviderFactory(
+                DebugAppCheckProviderFactory.getInstance()
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("AUTH_MANAGER", "AppCheck init failed", e)
+        }
+    }
 
     fun signUp(
         email: String,

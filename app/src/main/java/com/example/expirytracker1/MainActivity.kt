@@ -19,10 +19,12 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import com.example.expirytracker1.screens.*
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
+import com.example.expirytracker1.auth.FirebaseAuthManager
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // FirebaseAuthManager.initializeAppCheck(this)
         enableEdgeToEdge()
         setContent {
             var darkMode by remember { mutableStateOf(false) }

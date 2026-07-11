@@ -26,6 +26,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import com.example.expirytracker1.ui.theme.DarkGreenPrimary
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.SageGreenBackground
@@ -34,6 +36,7 @@ import com.example.expirytracker1.auth.FirebaseAuthManager
 
 @Composable
 fun SignUpScreen(onLoginClick: () -> Unit = {}, onSignUpSuccess: () -> Unit = {}) {
+    val context = LocalContext.current
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -198,17 +201,17 @@ fun SignUpScreen(onLoginClick: () -> Unit = {}, onSignUpSuccess: () -> Unit = {}
                         onClick = {
 
                             if (fullName.isBlank()) {
-                                println("Full name required")
+                                Toast.makeText(context, "Full name required", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
 
                             if (email.isBlank()) {
-                                println("Email required")
+                                Toast.makeText(context, "Email required", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
 
                             if (password.length < 6) {
-                                println("Password must be at least 6 characters")
+                                Toast.makeText(context, "Password must be at least 6 characters", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
 
@@ -219,7 +222,7 @@ fun SignUpScreen(onLoginClick: () -> Unit = {}, onSignUpSuccess: () -> Unit = {}
                                     onSignUpSuccess()
                                 },
                                 onFailure = { error ->
-                                    println(error)
+                                    Toast.makeText(context, error, Toast.LENGTH_LONG).show()
                                 }
                             )
                         },

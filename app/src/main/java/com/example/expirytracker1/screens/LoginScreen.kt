@@ -23,12 +23,16 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import com.example.expirytracker1.ui.theme.DarkGreenPrimary
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.TextGray
+import com.example.expirytracker1.auth.FirebaseAuthManager
 
 @Composable
 fun LoginScreen(onSignUpClick: () -> Unit = {}, onLoginSuccess: () -> Unit = {}) {
+    val context = LocalContext.current
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -174,7 +178,20 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}, onLoginSuccess: () -> Unit = {})
 
                     // Login Button
                     Button(
-                        onClick = onLoginSuccess,
+                        onClick = {
+                            if (email.isBlank() || password.isBlank()) {
+                                Toast.makeText(context, "Please fill in all fields", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            FirebaseAuthManager.login(
+                                email = email.trim(),
+                                password = password,
+                                onSuccess = onLoginSuccess,
+                                onFailure = { error ->
+                                    Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+                                }
+                            )
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
