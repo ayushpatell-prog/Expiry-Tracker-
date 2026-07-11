@@ -1,14 +1,19 @@
+
 package com.example.expirytracker1.screens
 
 import android.content.res.Configuration
-import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -19,35 +24,105 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.expirytracker1.ui.theme.DarkGreenPrimary
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.TextGray
+import kotlinx.coroutines.launch
+import java.util.UUID
 
+// Data model for pantry items
 data class PantryItem(
+    val id: String = UUID.randomUUID().toString(),
     val name: String,
     val qty: String,
     val expDate: String,
     val icon: ImageVector,
-    val statusColor: Color
+    val statusColor: Color,
+    val category: String
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InventoryScreen(onNavigate: (String) -> Unit = {}) {
+    // --- State Management ---
     var searchQuery by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf("All") }
+    
+    // Master list of items (using remember to survive recompositions)
+    val allItems = remember {
+        mutableStateListOf(
+            PantryItem(name = "Organic Broccoli", qty = "2", expDate = "24 Oct", icon = Icons.Default.Eco, statusColor = Color(0xFFD32F2F), category = "Vegetables"),
+            PantryItem(name = "Baby Carrots", qty = "1 bag", expDate = "30 Oct", icon = Icons.Default.BakeryDining, statusColor = Color(0xFF4CAF50), category = "Vegetables"),
+            PantryItem(name = "Whole Milk", qty = "1/2 Gal", expDate = "22 Oct", icon = Icons.Default.LocalDrink, statusColor = Color(0xFFD32F2F), category = "Dairy"),
+            PantryItem(name = "Greek Yogurt", qty = "2 cups", expDate = "15 Oct", icon = Icons.Default.Icecream, statusColor = Color(0xFFFBC02D), category = "Dairy")
+        )
+    }
 
-    val vegItems = listOf(
-        PantryItem("Organic Broccoli", "2", "24 Oct", Icons.Default.Eco, Color(0xFFD32F2F)),
-        PantryItem("Baby Carrots", "1 bag", "30 Oct", Icons.Default.BakeryDining, Color(0xFF4CAF50))
-    )
+    // Filter & Sort States
+    var showFilterSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState()
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    val dairyItems = listOf(
-        PantryItem("Whole Milk", "1/2 Gal", "22 Oct", Icons.Default.LocalDrink, Color(0xFFD32F2F))
-    )
+    // Applied states
+    var appliedSortBy by remember { mutableStateOf("Expiry Date (Nearest First)") }
+    var appliedCategories by remember { mutableStateOf(setOf("All", "Vegetables", "Dairy", "Meat")) }
+    var appliedStatuses by remember { mutableStateOf(setOf("Fresh", "Expiring Soon", "Expired")) }
+
+    // Derived State for performance: counts active filters (excluding defaults)
+    val activeFilterCount by remember {
+        derivedStateOf {
+            var count = 0
+            if (appliedSortBy != "Expiry Date (Nearest First)") count++
+            if (appliedCategories.size < 4) count++
+            if (appliedStatuses.size < 3) count++
+            count
+        }
+    }
+
+    // --- Helper Functions ---
+
+    fun getStatus(item: PantryItem): String {
+        return when (item.statusColor) {
+            Color(0xFF4CAF50) -> "Fresh"
+            Color(0xFFFBC02D) -> "Expiring Soon"
+            else -> "Expired"
+        }
+    }
+
+    fun sortItems(items: List<PantryItem>): List<PantryItem> {
+        return when (appliedSortBy) {
+            "Product Name (A-Z)" -> items.sortedBy { it.name }
+            "Quantity" -> items.sortedBy { it.qty }
+            "Expiry Date (Nearest First)" -> {
+                val months = mapOf("Jan" to 1, "Feb" to 2, "Mar" to 3, "Apr" to 4, "May" to 5, "Jun" to 6, "Jul" to 7, "Aug" to 8, "Sep" to 9, "Oct" to 10, "Nov" to 11, "Dec" to 12)
+                items.sortedBy { exp ->
+                    val parts = exp.expDate.split(" ")
+                    val day = parts.getOrNull(0)?.toIntOrNull() ?: 0
+                    val month = months[parts.getOrNull(1)] ?: 0
+                    month * 100 + day
+                }
+            }
+            else -> items
+        }
+    }
+
+    // Combined filtering logic
+    val filteredItems = remember(searchQuery, selectedCategory, appliedSortBy, appliedCategories, appliedStatuses, allItems.size) {
+        allItems.filter { item ->
+            val matchesSearch = item.name.contains(searchQuery, ignoreCase = true)
+            val matchesQuickCategory = selectedCategory == "All" || selectedCategory == item.category
+            val matchesAdvancedCategory = appliedCategories.contains("All") || appliedCategories.contains(item.category)
+            val matchesStatus = appliedStatuses.contains(getStatus(item))
+            matchesSearch && matchesQuickCategory && matchesAdvancedCategory && matchesStatus
+        }.let { sortItems(it) }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = { InventoryBottomNavigation(onNavigate) },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
@@ -58,7 +133,7 @@ fun InventoryScreen(onNavigate: (String) -> Unit = {}) {
                 .padding(horizontal = 16.dp)
         ) {
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // Search Bar Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -67,145 +142,198 @@ fun InventoryScreen(onNavigate: (String) -> Unit = {}) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(56.dp),
+                    modifier = Modifier.weight(1f).height(56.dp),
                     placeholder = { Text("Search your pantry...", color = TextGray) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextGray) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search Icon", tint = TextGray) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear Search")
+                            }
+                        }
+                    },
                     shape = RoundedCornerShape(28.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.outline,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                     )
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                IconButton(onClick = { }) {
-                    Icon(Icons.Default.Tune, contentDescription = "Filter", tint = MaterialTheme.colorScheme.onSurface)
+                
+                // Tune Icon with Filter Badge
+                BadgedBox(
+                    badge = {
+                        if (activeFilterCount > 0) {
+                            Badge { Text(activeFilterCount.toString()) }
+                        }
+                    }
+                ) {
+                    IconButton(onClick = { showFilterSheet = true }) {
+                        Icon(Icons.Default.Tune, contentDescription = "Open Filters", tint = MaterialTheme.colorScheme.onSurface)
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Category Filters
+            // Quick Category Chips
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                CategoryChip("All", isSelected = true)
-                CategoryChip("Vegetables", icon = Icons.Default.Eco)
-                CategoryChip("Dairy", icon = Icons.Default.LocalDrink)
-                CategoryChip("Meat", icon = Icons.Default.SetMeal)
+                listOf("All" to null, "Vegetables" to Icons.Default.Eco, "Dairy" to Icons.Default.LocalDrink, "Meat" to Icons.Default.SetMeal).forEach { (cat, icon) ->
+                    CategoryChip(cat, icon = icon, isSelected = selectedCategory == cat) { selectedCategory = cat }
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Inventory List
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                item {
-                    Text(
-                        text = "Vegetables",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(bottom = 8.dp)
+            // Inventory List with Animations
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (filteredItems.isEmpty()) {
+                    EmptyState(
+                        isSearch = searchQuery.isNotEmpty(),
+                        onClear = { searchQuery = "" }
                     )
-                }
-                items(vegItems) { item ->
-                    PantryItemCard(item)
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Dairy",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                }
-                items(dairyItems) { item ->
-                    PantryItemCard(item)
-                }
-                
-                item {
-                    Spacer(modifier = Modifier.height(80.dp))
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(filteredItems, key = { it.id }) { item ->
+                            PantryItemCard(
+                                item = item,
+                                statusLabel = getStatus(item),
+                                onDelete = {
+                                    val index = allItems.indexOf(item)
+                                    allItems.remove(item)
+                                    scope.launch {
+                                        val result = snackbarHostState.showSnackbar(
+                                            message = "${item.name} deleted",
+                                            actionLabel = "UNDO",
+                                            duration = SnackbarDuration.Short
+                                        )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            allItems.add(index, item)
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                        item { Spacer(modifier = Modifier.height(80.dp)) }
+                    }
                 }
             }
         }
-    }
-}
 
-@Composable
-fun CategoryChip(text: String, icon: ImageVector? = null, isSelected: Boolean = false) {
-    Surface(
-        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(20.dp),
-        border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-            Text(
-                text = text,
-                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Medium,
-                fontSize = 14.sp
+        // --- Bottom Sheet Logic ---
+        if (showFilterSheet) {
+            FilterSortBottomSheet(
+                sheetState = sheetState,
+                scope = scope,
+                initialSortBy = appliedSortBy,
+                initialCategories = appliedCategories,
+                initialStatuses = appliedStatuses,
+                onApply = { sort, cats, stats ->
+                    appliedSortBy = sort
+                    appliedCategories = cats
+                    appliedStatuses = stats
+                    showFilterSheet = false
+                },
+                onReset = {
+                    searchQuery = ""
+                    selectedCategory = "All"
+                    appliedSortBy = "Expiry Date (Nearest First)"
+                    appliedCategories = setOf("All", "Vegetables", "Dairy", "Meat")
+                    appliedStatuses = setOf("Fresh", "Expiring Soon", "Expired")
+                    showFilterSheet = false
+                },
+                onDismiss = { showFilterSheet = false }
             )
         }
     }
 }
 
 @Composable
-fun PantryItemCard(item: PantryItem) {
+fun EmptyState(isSearch: Boolean, onClear: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = if (isSearch) Icons.Default.SearchOff else Icons.Default.Inventory,
+            contentDescription = null,
+            modifier = Modifier.size(80.dp),
+            tint = TextGray.copy(alpha = 0.5f)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = if (isSearch) "No products found" else "Inventory is empty",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = if (isSearch) "Try another search keyword." else "Start adding items to track them.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextGray,
+            textAlign = TextAlign.Center
+        )
+        if (isSearch) {
+            TextButton(onClick = onClear, modifier = Modifier.padding(top = 8.dp)) {
+                Text("Clear Search")
+            }
+        }
+    }
+}
+
+@Composable
+fun PantryItemCard(item: PantryItem, statusLabel: String, onDelete: () -> Unit) {
+    var showMenu by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
     ) {
         Column {
             Row(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth(),
+                modifier = Modifier.padding(16.dp).fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Product Icon
                 Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(item.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
                 }
+                
                 Spacer(modifier = Modifier.width(16.dp))
+                
                 Column(modifier = Modifier.weight(1f)) {
+                    // Status Badge
+                    Surface(
+                        color = item.statusColor.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(item.statusColor))
+                            Spacer(Modifier.width(4.dp))
+                            Text(text = statusLabel, color = item.statusColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    
                     Text(
                         text = item.name,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        fontWeight = FontWeight.Bold
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "Qty: ${item.qty}", color = TextGray, fontSize = 14.sp)
@@ -213,83 +341,221 @@ fun PantryItemCard(item: PantryItem) {
                         Text(text = "Exp: ${item.expDate}", color = Color(0xFFD32F2F), fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     }
                 }
-                IconButton(onClick = { }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                // Overflow Menu
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Product Options", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("View Details") },
+                            onClick = { showMenu = false },
+                            leadingIcon = { Icon(Icons.Default.Visibility, contentDescription = "View Details") }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Edit Product") },
+                            onClick = { showMenu = false },
+                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = "Edit Product") }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Set Reminder") },
+                            onClick = { showMenu = false },
+                            leadingIcon = { Icon(Icons.Default.Notifications, contentDescription = "Set Reminder") }
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                        DropdownMenuItem(
+                            text = { Text("Delete Product", color = MaterialTheme.colorScheme.error) },
+                            onClick = { showMenu = false; showDeleteDialog = true },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = "Delete Product", tint = MaterialTheme.colorScheme.error) }
+                        )
+                    }
                 }
             }
-            // Expiry Line
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+            // AI Suggestion Button - Only for Non-Fresh items
+            AnimatedVisibility(
+                visible = statusLabel != "Fresh",
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
             ) {
+                FilledTonalButton(
+                    onClick = { },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = "AI Assistant")
+                    Spacer(Modifier.width(8.dp))
+                    Text("Get AI Recipe Suggestions")
+                }
+            }
+
+            // Expiry Line
+            Box(modifier = Modifier.fillMaxWidth().height(3.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth(if (item.statusColor == Color(0xFF4CAF50)) 0.3f else 1f)
-                        .fillMaxHeight()
-                        .background(item.statusColor)
+                    modifier = Modifier.fillMaxWidth(if (statusLabel == "Fresh") 0.3f else 1f).fillMaxHeight().background(item.statusColor)
                 )
+            }
+        }
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Product?") },
+            text = { Text("Are you sure you want to remove ${item.name}?") },
+            confirmButton = {
+                Button(onClick = { showDeleteDialog = false; onDelete() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FilterSortBottomSheet(
+    sheetState: SheetState,
+    scope: kotlinx.coroutines.CoroutineScope,
+    initialSortBy: String,
+    initialCategories: Set<String>,
+    initialStatuses: Set<String>,
+    onApply: (String, Set<String>, Set<String>) -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var tempSortBy by remember { mutableStateOf(initialSortBy) }
+    var tempCategories by remember { mutableStateOf(initialCategories) }
+    var tempStatuses by remember { mutableStateOf(initialStatuses) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = { BottomSheetDefaults.DragHandle() }
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp).verticalScroll(rememberScrollState())
+        ) {
+            Text("Filter & Sort", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 16.dp))
+
+            Text("Sort By", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            val sortOptions = listOf("Expiry Date (Nearest First)", "Product Name (A-Z)", "Recently Added", "Quantity")
+            Column(Modifier.selectableGroup()) {
+                sortOptions.forEach { text ->
+                    Row(
+                        Modifier.fillMaxWidth().height(48.dp).selectable(selected = (text == tempSortBy), onClick = { tempSortBy = text }),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = (text == tempSortBy), onClick = null)
+                        Text(text = text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 16.dp))
+                    }
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+            Text("Category", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            val categoryOptions = listOf("All", "Vegetables", "Dairy", "Meat")
+            categoryOptions.forEach { text ->
+                Row(
+                    Modifier.fillMaxWidth().height(48.dp).clickable {
+                        tempCategories = if (text == "All") {
+                            if (tempCategories.contains("All")) emptySet() else categoryOptions.toSet()
+                        } else {
+                            val newSet = tempCategories.toMutableSet()
+                            if (newSet.contains(text)) newSet.remove(text) else newSet.add(text)
+                            if (newSet.size == categoryOptions.size - 1 && !newSet.contains("All")) newSet.add("All")
+                            else if (newSet.size < categoryOptions.size) newSet.remove("All")
+                            newSet
+                        }
+                    },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = tempCategories.contains(text), onCheckedChange = null)
+                    Text(text = text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 16.dp))
+                }
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+            Text("Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            val statusOptions = listOf("Fresh", "Expiring Soon", "Expired")
+            statusOptions.forEach { text ->
+                Row(
+                    Modifier.fillMaxWidth().height(48.dp).clickable {
+                        val newSet = tempStatuses.toMutableSet()
+                        if (newSet.contains(text)) newSet.remove(text) else newSet.add(text)
+                        tempStatuses = newSet
+                    },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = tempStatuses.contains(text), onCheckedChange = null)
+                    Text(text = text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 16.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedButton(modifier = Modifier.weight(1f), onClick = { onReset() }) { Text("Reset") }
+                Button(modifier = Modifier.weight(1f), onClick = { onApply(tempSortBy, tempCategories, tempStatuses) }) { Text("Apply") }
             }
         }
     }
 }
 
 @Composable
-fun InventoryBottomNavigation(onNavigate: (String) -> Unit) {
-    NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surface,
-        tonalElevation = 8.dp
+fun CategoryChip(text: String, icon: ImageVector? = null, isSelected: Boolean = false, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(20.dp),
+        border = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
     ) {
-        NavigationBarItem(
-            icon = { Icon(Icons.Outlined.Home, contentDescription = "Home") },
-            label = { Text("Home") },
-            selected = false,
-            onClick = { onNavigate("HOME") }
+        Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) {
+                Icon(icon, contentDescription = null, tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(text = text, color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
+fun InventoryBottomNavigation(onNavigate: (String) -> Unit) {
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 8.dp) {
+        val navItems = listOf(
+            Triple("Home", Icons.Outlined.Home, "HOME"),
+            Triple("Inventory", Icons.Filled.Inventory2, "INVENTORY"),
+            Triple("Assistant", Icons.Outlined.AutoAwesome, "ASSISTANT"),
+            Triple("Settings", Icons.Outlined.Settings, "SETTINGS")
         )
-        NavigationBarItem(
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp, 32.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.Inventory2, contentDescription = "Inventory", tint = MaterialTheme.colorScheme.primary)
-                }
-            },
-            label = { Text("Inventory", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) },
-            selected = true,
-            onClick = { }
-        )
-        NavigationBarItem(
-            icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = "Assistant") },
-            label = { Text("Assistant") },
-            selected = false,
-            onClick = { onNavigate("ASSISTANT") }
-        )
-        NavigationBarItem(
-            icon = { Icon(Icons.Outlined.Settings, contentDescription = "Settings") },
-            label = { Text("Settings") },
-            selected = false,
-            onClick = { onNavigate("SETTINGS") }
-        )
+        navItems.forEach { (label, icon, route) ->
+            val isSelected = route == "INVENTORY"
+            NavigationBarItem(
+                icon = {
+                    if (isSelected) {
+                        Box(modifier = Modifier.size(48.dp, 32.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
+                            Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.primary)
+                        }
+                    } else {
+                        Icon(icon, contentDescription = label)
+                    }
+                },
+                label = { Text(label, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                selected = isSelected,
+                onClick = { if (!isSelected) onNavigate(route) }
+            )
+        }
     }
 }
 
 @Preview(showBackground = true)
 @Composable
 fun InventoryScreenPreview() {
-    ExpiryTracker1Theme(darkTheme = false) {
-        InventoryScreen()
-    }
-}
-
-@Preview(showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Composable
-fun InventoryScreenDarkPreview() {
-    ExpiryTracker1Theme(darkTheme = true) {
-        InventoryScreen()
-    }
+    ExpiryTracker1Theme { InventoryScreen() }
 }
