@@ -17,8 +17,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.expirytracker1.screens.*
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
+import com.example.expirytracker1.viewmodel.ProductViewModel
 import com.example.expirytracker1.auth.FirebaseAuthManager
 
 class MainActivity : ComponentActivity() {
@@ -27,6 +29,7 @@ class MainActivity : ComponentActivity() {
         // FirebaseAuthManager.initializeAppCheck(this)
         enableEdgeToEdge()
         setContent {
+            val productViewModel: ProductViewModel = viewModel()
             var darkMode by remember { mutableStateOf(false) }
             ExpiryTracker1Theme(darkTheme = darkMode) {
                 var currentScreen by remember { mutableStateOf("LOGIN") }
@@ -61,8 +64,14 @@ class MainActivity : ComponentActivity() {
                             onSignUpSuccess = { currentScreen = "HOME" }
                         )
 
-                        "HOME" -> HomeScreen(onNavigate = { currentScreen = it })
-                        "INVENTORY" -> InventoryScreen(onNavigate = { currentScreen = it })
+                        "HOME" -> HomeScreen(
+                            viewModel = productViewModel,
+                            onNavigate = { currentScreen = it }
+                        )
+                        "INVENTORY" -> InventoryScreen(
+                            viewModel = productViewModel,
+                            onNavigate = { currentScreen = it }
+                        )
                         "ASSISTANT" -> AssistantScreen(onNavigate = { currentScreen = it })
                         "SETTINGS" -> SettingsScreen(onNavigate = { currentScreen = it })
                         "PROFILE" -> ProfileScreen(
