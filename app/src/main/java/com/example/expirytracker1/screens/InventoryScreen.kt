@@ -28,38 +28,25 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.expirytracker1.data.PantryItem
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.TextGray
+import com.example.expirytracker1.viewmodel.ProductViewModel
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-// Data model for pantry items
-data class PantryItem(
-    val id: String = UUID.randomUUID().toString(),
-    val name: String,
-    val qty: String,
-    val expDate: String,
-    val icon: ImageVector,
-    val statusColor: Color,
-    val category: String
-)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InventoryScreen(onNavigate: (String) -> Unit = {}) {
+fun InventoryScreen(
+    viewModel: ProductViewModel = ProductViewModel(),
+    onNavigate: (String) -> Unit = {}
+) {
     // --- State Management ---
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All") }
     
-    // Master list of items (using remember to survive recompositions)
-    val allItems = remember {
-        mutableStateListOf(
-            PantryItem(name = "Organic Broccoli", qty = "2", expDate = "24 Oct", icon = Icons.Default.Eco, statusColor = Color(0xFFD32F2F), category = "Vegetables"),
-            PantryItem(name = "Baby Carrots", qty = "1 bag", expDate = "30 Oct", icon = Icons.Default.BakeryDining, statusColor = Color(0xFF4CAF50), category = "Vegetables"),
-            PantryItem(name = "Whole Milk", qty = "1/2 Gal", expDate = "22 Oct", icon = Icons.Default.LocalDrink, statusColor = Color(0xFFD32F2F), category = "Dairy"),
-            PantryItem(name = "Greek Yogurt", qty = "2 cups", expDate = "15 Oct", icon = Icons.Default.Icecream, statusColor = Color(0xFFFBC02D), category = "Dairy")
-        )
-    }
+    // Use shared list from ViewModel
+    val allItems = viewModel.products
 
     // Filter & Sort States
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -96,11 +83,11 @@ fun InventoryScreen(onNavigate: (String) -> Unit = {}) {
     fun sortItems(items: List<PantryItem>): List<PantryItem> {
         return when (appliedSortBy) {
             "Product Name (A-Z)" -> items.sortedBy { it.name }
-            "Quantity" -> items.sortedBy { it.qty }
+            "Quantity" -> items.sortedBy { it.quantity }
             "Expiry Date (Nearest First)" -> {
                 val months = mapOf("Jan" to 1, "Feb" to 2, "Mar" to 3, "Apr" to 4, "May" to 5, "Jun" to 6, "Jul" to 7, "Aug" to 8, "Sep" to 9, "Oct" to 10, "Nov" to 11, "Dec" to 12)
                 items.sortedBy { exp ->
-                    val parts = exp.expDate.split(" ")
+                    val parts = exp.expiryDate.split(" ")
                     val day = parts.getOrNull(0)?.toIntOrNull() ?: 0
                     val month = months[parts.getOrNull(1)] ?: 0
                     month * 100 + day
@@ -205,8 +192,8 @@ fun InventoryScreen(onNavigate: (String) -> Unit = {}) {
                                 item = item,
                                 statusLabel = getStatus(item),
                                 onDelete = {
-                                    val index = allItems.indexOf(item)
-                                    allItems.remove(item)
+                                    // Remove from shared ViewModel
+                                    viewModel.deleteProduct(item)
                                     scope.launch {
                                         val result = snackbarHostState.showSnackbar(
                                             message = "${item.name} deleted",
@@ -214,7 +201,7 @@ fun InventoryScreen(onNavigate: (String) -> Unit = {}) {
                                             duration = SnackbarDuration.Short
                                         )
                                         if (result == SnackbarResult.ActionPerformed) {
-                                            allItems.add(index, item)
+                                            viewModel.addProduct(item)
                                         }
                                     }
                                 }
@@ -336,9 +323,9 @@ fun PantryItemCard(item: PantryItem, statusLabel: String, onDelete: () -> Unit) 
                         fontWeight = FontWeight.Bold
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "Qty: ${item.qty}", color = TextGray, fontSize = 14.sp)
+                        Text(text = "Qty: ${item.quantity}", color = TextGray, fontSize = 14.sp)
                         Text(text = "  •  ", color = TextGray)
-                        Text(text = "Exp: ${item.expDate}", color = Color(0xFFD32F2F), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text(text = "Exp: ${item.expiryDate}", color = Color(0xFFD32F2F), fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     }
                 }
 
