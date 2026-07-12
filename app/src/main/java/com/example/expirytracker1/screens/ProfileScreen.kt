@@ -26,6 +26,7 @@ import com.example.expirytracker1.ui.theme.DarkGreenPrimary
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.SageGreenBackground
 import com.example.expirytracker1.ui.theme.TextGray
+import com.google.firebase.auth.FirebaseAuth
 
 @Composable
 fun ProfileScreen(
@@ -89,7 +90,10 @@ fun ProfileScreen(
 
             item {
                 Button(
-                    onClick = { onNavigate("LOGIN") },
+                    onClick = {
+                        FirebaseAuth.getInstance().signOut()
+                        onNavigate("LOGIN")
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
@@ -115,6 +119,12 @@ fun ProfileScreen(
 
 @Composable
 fun ProfileHeaderCard(onEditClick: () -> Unit = {}) {
+
+    val user = FirebaseAuth.getInstance().currentUser
+
+    val name = user?.displayName ?: "User"
+    val email = user?.email ?: "No Email"
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -129,7 +139,9 @@ fun ProfileHeaderCard(onEditClick: () -> Unit = {}) {
                 .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+
             Box(contentAlignment = Alignment.BottomEnd) {
+
                 Box(
                     modifier = Modifier
                         .size(100.dp)
@@ -138,12 +150,13 @@ fun ProfileHeaderCard(onEditClick: () -> Unit = {}) {
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Default.Person, 
-                        contentDescription = null, 
+                        Icons.Default.Person,
+                        contentDescription = null,
                         modifier = Modifier.size(50.dp),
                         tint = DarkGreenPrimary
                     )
                 }
+
                 Box(
                     modifier = Modifier
                         .size(32.dp)
@@ -153,20 +166,26 @@ fun ProfileHeaderCard(onEditClick: () -> Unit = {}) {
                         .clickable { onEditClick() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             Text(
-                text = "Alex Johnson",
+                text = name,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
+
             Text(
-                text = "alex.j@example.com",
+                text = email,
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextGray
             )

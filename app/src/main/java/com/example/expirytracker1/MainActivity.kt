@@ -21,10 +21,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.expirytracker1.screens.*
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.viewmodel.ProductViewModel
+import com.example.expirytracker1.auth.FirebaseAuthManager
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // FirebaseAuthManager.initializeAppCheck(this)
         enableEdgeToEdge()
         setContent {
             val productViewModel: ProductViewModel = viewModel()

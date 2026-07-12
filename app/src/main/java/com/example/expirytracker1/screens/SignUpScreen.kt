@@ -26,13 +26,17 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import com.example.expirytracker1.ui.theme.DarkGreenPrimary
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.SageGreenBackground
 import com.example.expirytracker1.ui.theme.TextGray
+import com.example.expirytracker1.auth.FirebaseAuthManager
 
 @Composable
 fun SignUpScreen(onLoginClick: () -> Unit = {}, onSignUpSuccess: () -> Unit = {}) {
+    val context = LocalContext.current
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -194,17 +198,55 @@ fun SignUpScreen(onLoginClick: () -> Unit = {}, onSignUpSuccess: () -> Unit = {}
 
                     // Sign Up Button
                     Button(
-                        onClick = onSignUpSuccess,
+                        onClick = {
+
+                            if (fullName.isBlank()) {
+                                Toast.makeText(context, "Full name required", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+
+                            if (email.isBlank()) {
+                                Toast.makeText(context, "Email required", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+
+                            if (password.length < 6) {
+                                Toast.makeText(context, "Password must be at least 6 characters", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+
+                            FirebaseAuthManager.signUp(
+                                email = email.trim(),
+                                password = password,
+                                onSuccess = {
+                                    onSignUpSuccess()
+                                },
+                                onFailure = { error ->
+                                    Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+                                }
+                            )
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Sign Up", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                            Text(
+                                "Sign Up",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                            Icon(
+                                Icons.AutoMirrored.Outlined.ArrowForward,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
                         }
                     }
 
