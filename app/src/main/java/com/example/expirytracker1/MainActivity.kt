@@ -22,10 +22,12 @@ import com.example.expirytracker1.screens.*
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.viewmodel.ProductViewModel
 import com.example.expirytracker1.auth.FirebaseAuthManager
+import com.example.expirytracker1.notifications.NotificationHelper
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        NotificationHelper.createNotificationChannel(this)
         // FirebaseAuthManager.initializeAppCheck(this)
         enableEdgeToEdge()
         setContent {
@@ -81,6 +83,8 @@ class MainActivity : ComponentActivity() {
                             onDarkModeChange = { darkMode = it },
                             onNavigate = { currentScreen = it }
                         )
+
+                        "NOTIFICATIONS" -> NotificationsScreen(onNavigateBack = { currentScreen = "HOME" })
 
                         "SCANNER" -> ScannerScreen(onNavigateBack = { currentScreen = "HOME" })
                     }

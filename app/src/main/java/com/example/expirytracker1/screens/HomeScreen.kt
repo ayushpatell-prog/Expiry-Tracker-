@@ -94,11 +94,7 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(20.dp))
                 HeaderSection(
                     onProfileClick = { onNavigate("PROFILE") },
-                    onNotificationClick = {
-                        scope.launch {
-                            snackbarHostState.showSnackbar("Notification Screen Coming Soon")
-                        }
-                    }
+                    onNotificationClick = { onNavigate("NOTIFICATIONS") }
                 )
             }
 
