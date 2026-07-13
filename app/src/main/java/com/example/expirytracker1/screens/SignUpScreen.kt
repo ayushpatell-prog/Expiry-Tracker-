@@ -216,6 +216,7 @@ fun SignUpScreen(onLoginClick: () -> Unit = {}, onSignUpSuccess: () -> Unit = {}
                             }
 
                             FirebaseAuthManager.signUp(
+                                fullName = fullName.trim(),
                                 email = email.trim(),
                                 password = password,
                                 onSuccess = {

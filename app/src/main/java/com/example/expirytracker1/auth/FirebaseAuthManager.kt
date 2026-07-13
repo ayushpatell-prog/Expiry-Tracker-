@@ -21,14 +21,22 @@ object FirebaseAuthManager {
     }
 
     fun signUp(
+        fullName: String,
         email: String,
         password: String,
         onSuccess: () -> Unit,
         onFailure: (String) -> Unit
     ) {
         auth.createUserWithEmailAndPassword(email, password)
-            .addOnSuccessListener {
-                onSuccess()
+            .addOnSuccessListener { result ->
+                val profileUpdates = com.google.firebase.auth.UserProfileChangeRequest.Builder()
+                    .setDisplayName(fullName)
+                    .build()
+
+                result.user?.updateProfile(profileUpdates)
+                    ?.addOnCompleteListener {
+                        onSuccess()
+                    }
             }
             .addOnFailureListener { exception ->
                 android.util.Log.e("AUTH_ERROR", "Signup failed", exception)

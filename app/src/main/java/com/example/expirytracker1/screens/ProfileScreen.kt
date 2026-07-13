@@ -28,6 +28,8 @@ import com.example.expirytracker1.ui.theme.SageGreenBackground
 import com.example.expirytracker1.ui.theme.TextGray
 import com.google.firebase.auth.FirebaseAuth
 
+import com.example.expirytracker1.auth.FirebaseAuthManager
+
 @Composable
 fun ProfileScreen(
     darkMode: Boolean,
@@ -91,7 +93,7 @@ fun ProfileScreen(
             item {
                 Button(
                     onClick = {
-                        FirebaseAuth.getInstance().signOut()
+                        FirebaseAuthManager.logout()
                         onNavigate("LOGIN")
                     },
                     modifier = Modifier
@@ -120,7 +122,7 @@ fun ProfileScreen(
 @Composable
 fun ProfileHeaderCard(onEditClick: () -> Unit = {}) {
 
-    val user = FirebaseAuth.getInstance().currentUser
+    val user = FirebaseAuthManager.currentUser()
 
     val name = user?.displayName ?: "User"
     val email = user?.email ?: "No Email"

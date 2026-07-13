@@ -32,7 +32,9 @@ class MainActivity : ComponentActivity() {
             val productViewModel: ProductViewModel = viewModel()
             var darkMode by remember { mutableStateOf(false) }
             ExpiryTracker1Theme(darkTheme = darkMode) {
-                var currentScreen by remember { mutableStateOf("LOGIN") }
+                var currentScreen by remember { 
+                    mutableStateOf(if (FirebaseAuthManager.currentUser() != null) "HOME" else "LOGIN") 
+                }
 
                 AnimatedContent(
                     targetState = currentScreen,
