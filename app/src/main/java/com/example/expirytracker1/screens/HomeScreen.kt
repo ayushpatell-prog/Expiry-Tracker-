@@ -25,9 +25,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.expirytracker1.data.PantryItem
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.TextGray
@@ -39,7 +41,7 @@ import java.util.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    viewModel: ProductViewModel = ProductViewModel(),
+    viewModel: ProductViewModel,
     onNavigate: (String) -> Unit = {}
 ) {
     // --- State Management ---
@@ -319,7 +321,10 @@ fun InventoryCard(item: PantryItem) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Box(
                         modifier = Modifier
                             .size(56.dp)
@@ -334,12 +339,14 @@ fun InventoryCard(item: PantryItem) {
                         )
                     }
                     Spacer(modifier = Modifier.width(16.dp))
-                    Column {
+                    Column(modifier = Modifier.padding(end = 8.dp)) {
                         Text(
                             text = item.name,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Surface(
                             color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f),
@@ -591,18 +598,7 @@ fun ManualAddContent(onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
                             category = category,
                             daysLeft = daysLeft,
                             quantity = quantity.ifBlank { "1" },
-                            expiryDate = dateFormat.format(Date(expDate)),
-                            icon = when(category) {
-                                "Dairy" -> Icons.Default.Icecream
-                                "Produce", "Vegetables", "Fruits" -> Icons.Default.Eco
-                                "Meat" -> Icons.Default.SetMeal
-                                else -> Icons.Default.Inventory
-                            },
-                            statusColor = when {
-                                daysLeft < 3 -> Color(0xFFD32F2F)
-                                daysLeft < 7 -> Color(0xFFFBC02D)
-                                else -> Color(0xFF4CAF50)
-                            }
+                            expiryDate = dateFormat.format(Date(expDate))
                         ))
                     }
                 },
@@ -681,6 +677,6 @@ fun BottomNavigationBar(onNavigate: (String) -> Unit) {
 @Composable
 fun HomeScreenPreview() {
     ExpiryTracker1Theme(dynamicColor = false) {
-        HomeScreen()
+        HomeScreen(viewModel = viewModel())
     }
 }

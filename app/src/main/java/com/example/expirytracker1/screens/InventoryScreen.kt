@@ -25,9 +25,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.expirytracker1.data.PantryItem
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.TextGray
@@ -38,7 +40,7 @@ import java.util.UUID
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InventoryScreen(
-    viewModel: ProductViewModel = ProductViewModel(),
+    viewModel: ProductViewModel,
     onNavigate: (String) -> Unit = {}
 ) {
     // --- State Management ---
@@ -320,7 +322,9 @@ fun PantryItemCard(item: PantryItem, statusLabel: String, onDelete: () -> Unit) 
                     Text(
                         text = item.name,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(text = "Qty: ${item.quantity}", color = TextGray, fontSize = 14.sp)
@@ -544,5 +548,5 @@ fun InventoryBottomNavigation(onNavigate: (String) -> Unit) {
 @Preview(showBackground = true)
 @Composable
 fun InventoryScreenPreview() {
-    ExpiryTracker1Theme { InventoryScreen() }
+    ExpiryTracker1Theme { InventoryScreen(viewModel = viewModel()) }
 }
