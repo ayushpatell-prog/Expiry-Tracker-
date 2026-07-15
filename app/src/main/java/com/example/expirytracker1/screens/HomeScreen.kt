@@ -94,7 +94,25 @@ fun HomeScreen(
         ) {
             item {
                 Spacer(modifier = Modifier.height(20.dp))
+                val user = com.example.expirytracker1.auth.FirebaseAuthManager.currentUser()
+                val userName = user?.displayName ?: "User"
+                
+                // Dynamic Expiry Message Logic
+                val expiringSoonCount = itemsState.count { it.daysLeft in 0..3 }
+                val subtitle = when {
+                    itemsState.isEmpty() -> "Your pantry is empty."
+                    expiringSoonCount == 0 -> "Everything is fresh!"
+                    expiringSoonCount == 1 -> {
+                        val item = itemsState.find { it.daysLeft in 0..3 }
+                        if (item?.daysLeft == 0) "1 item expires today!" 
+                        else "1 item expiring soon."
+                    }
+                    else -> "$expiringSoonCount items expiring soon."
+                }
+
                 HeaderSection(
+                    userName = userName,
+                    subtitle = subtitle,
                     onProfileClick = { onNavigate("PROFILE") },
                     onNotificationClick = { onNavigate("NOTIFICATIONS") }
                 )
@@ -175,7 +193,7 @@ fun HomeScreen(
 }
 
 @Composable
-fun HeaderSection(onProfileClick: () -> Unit, onNotificationClick: () -> Unit) {
+fun HeaderSection(userName: String, subtitle: String, onProfileClick: () -> Unit, onNotificationClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -201,15 +219,17 @@ fun HeaderSection(onProfileClick: () -> Unit, onNotificationClick: () -> Unit) {
             Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(
-                    text = "Hello, User!",
+                    text = "Hello, $userName!",
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "You have items expiring soon.",
+                    text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextGray
+                    color = if (subtitle.contains("today") || subtitle.contains("soon") && !subtitle.contains("No")) 
+                        MaterialTheme.colorScheme.error 
+                    else TextGray
                 )
             }
         }

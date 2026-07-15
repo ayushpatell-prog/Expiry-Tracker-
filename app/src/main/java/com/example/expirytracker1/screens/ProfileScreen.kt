@@ -22,12 +22,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
+import android.widget.Toast
+import java.io.File
 import com.example.expirytracker1.ui.theme.DarkGreenPrimary
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.SageGreenBackground
 import com.example.expirytracker1.ui.theme.TextGray
-import com.google.firebase.auth.FirebaseAuth
-
 import com.example.expirytracker1.auth.FirebaseAuthManager
 
 @Composable
@@ -36,6 +42,47 @@ fun ProfileScreen(
     onDarkModeChange: (Boolean) -> Unit,
     onNavigate: (String) -> Unit = {}
 ) {
+    val context = LocalContext.current
+    var showEditNameDialog by remember { mutableStateOf(false) }
+    var showChangePasswordDialog by remember { mutableStateOf(false) }
+    var showImagePickerDialog by remember { mutableStateOf(false) }
+    
+    // Image Picking Logic
+    var tempImageUri by remember { mutableStateOf<Uri?>(null) }
+    
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            FirebaseAuthManager.updateProfile(photoUri = it, onSuccess = {
+                Toast.makeText(context, "Profile picture updated", Toast.LENGTH_SHORT).show()
+            }, onFailure = { err ->
+                Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+            })
+        }
+    }
+    
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success) {
+            tempImageUri?.let { uri ->
+                FirebaseAuthManager.updateProfile(photoUri = uri, onSuccess = {
+                    Toast.makeText(context, "Profile picture updated", Toast.LENGTH_SHORT).show()
+                }, onFailure = { err ->
+                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                })
+            }
+        }
+    }
+
+    fun createImageUri(): Uri {
+        val directory = File(context.externalCacheDir, "camera_images")
+        if (!directory.exists()) directory.mkdirs()
+        val file = File(directory, "profile_${System.currentTimeMillis()}.jpg")
+        return FileProvider.getUriForFile(context, "com.example.expirytracker1.fileprovider", file)
+    }
+
     Scaffold(
         bottomBar = { ProfileBottomNavigation(onNavigate) },
         containerColor = MaterialTheme.colorScheme.background
@@ -58,20 +105,32 @@ fun ProfileScreen(
             }
 
             item {
-                ProfileHeaderCard()
+                ProfileHeaderCard(onEditPhotoClick = { showImagePickerDialog = true })
             }
 
             item {
                 SettingsGroup(title = "ACCOUNT SETTINGS") {
-                    SettingsItem(icon = Icons.Outlined.Person, label = "Edit Profile")
+                    SettingsItem(
+                        icon = Icons.Outlined.Person, 
+                        label = "Edit Profile",
+                        onClick = { showEditNameDialog = true }
+                    )
                     SettingsDivider()
-                    SettingsItem(icon = Icons.Outlined.Lock, label = "Change Password")
+                    SettingsItem(
+                        icon = Icons.Outlined.Lock, 
+                        label = "Change Password",
+                        onClick = { showChangePasswordDialog = true }
+                    )
                 }
             }
 
             item {
                 SettingsGroup(title = "APP PREFERENCES") {
-                    SettingsItem(icon = Icons.Outlined.Notifications, label = "Notification Settings", onClick = { onNavigate("SETTINGS") })
+                    SettingsItem(
+                        icon = Icons.Outlined.Notifications, 
+                        label = "Notification Settings", 
+                        onClick = { onNavigate("SETTINGS") }
+                    )
                     SettingsDivider()
                     SettingsItem(
                         icon = Icons.Outlined.DarkMode, 
@@ -117,15 +176,130 @@ fun ProfileScreen(
             }
         }
     }
+
+    // --- Dialogs ---
+
+    if (showEditNameDialog) {
+        var newName by remember { mutableStateOf(FirebaseAuthManager.currentUser()?.displayName ?: "") }
+        AlertDialog(
+            onDismissRequest = { showEditNameDialog = false },
+            title = { Text("Edit Name") },
+            text = {
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text("Full Name") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    FirebaseAuthManager.updateProfile(fullName = newName, onSuccess = {
+                        showEditNameDialog = false
+                        Toast.makeText(context, "Name updated", Toast.LENGTH_SHORT).show()
+                    }, onFailure = { err ->
+                        Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                    })
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditNameDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showChangePasswordDialog) {
+        var currentPassword by remember { mutableStateOf("") }
+        var newPassword by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showChangePasswordDialog = false },
+            title = { Text("Change Password") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = currentPassword,
+                        onValueChange = { currentPassword = it },
+                        label = { Text("Current Password") },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = newPassword,
+                        onValueChange = { newPassword = it },
+                        label = { Text("New Password") },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (newPassword.length < 6) {
+                        Toast.makeText(context, "Password must be at least 6 characters", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    FirebaseAuthManager.changePassword(currentPassword, newPassword, onSuccess = {
+                        showChangePasswordDialog = false
+                        Toast.makeText(context, "Password changed successfully", Toast.LENGTH_SHORT).show()
+                    }, onFailure = { err ->
+                        Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
+                    })
+                }) { Text("Change") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showChangePasswordDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showImagePickerDialog) {
+        AlertDialog(
+            onDismissRequest = { showImagePickerDialog = false },
+            title = { Text("Profile Photo") },
+            text = { Text("Choose an option to update your photo.") },
+            confirmButton = {
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            showImagePickerDialog = false
+                            galleryLauncher.launch("image/*")
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Gallery")
+                    }
+                    Button(
+                        onClick = {
+                            showImagePickerDialog = false
+                            val uri = createImageUri()
+                            tempImageUri = uri
+                            cameraLauncher.launch(uri)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.CameraAlt, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Camera")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImagePickerDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
 }
 
 @Composable
-fun ProfileHeaderCard(onEditClick: () -> Unit = {}) {
+fun ProfileHeaderCard(onEditPhotoClick: () -> Unit = {}) {
 
     val user = FirebaseAuthManager.currentUser()
 
     val name = user?.displayName ?: "User"
     val email = user?.email ?: "No Email"
+    val photoUrl = user?.photoUrl
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -143,20 +317,31 @@ fun ProfileHeaderCard(onEditClick: () -> Unit = {}) {
         ) {
 
             Box(contentAlignment = Alignment.BottomEnd) {
-
-                Box(
-                    modifier = Modifier
-                        .size(100.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF81C784).copy(alpha = 0.8f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Person,
-                        contentDescription = null,
-                        modifier = Modifier.size(50.dp),
-                        tint = DarkGreenPrimary
+                if (photoUrl != null) {
+                    AsyncImage(
+                        model = photoUrl,
+                        contentDescription = "Profile Picture",
+                        modifier = Modifier
+                            .size(100.dp)
+                            .clip(CircleShape)
+                            .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
                     )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(100.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF81C784).copy(alpha = 0.8f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Person,
+                            contentDescription = null,
+                            modifier = Modifier.size(50.dp),
+                            tint = DarkGreenPrimary
+                        )
+                    }
                 }
 
                 Box(
@@ -165,7 +350,7 @@ fun ProfileHeaderCard(onEditClick: () -> Unit = {}) {
                         .clip(CircleShape)
                         .background(DarkGreenPrimary)
                         .border(2.dp, Color.White, CircleShape)
-                        .clickable { onEditClick() },
+                        .clickable { onEditPhotoClick() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(

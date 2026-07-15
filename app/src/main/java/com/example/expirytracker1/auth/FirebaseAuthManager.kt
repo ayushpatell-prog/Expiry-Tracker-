@@ -65,6 +65,51 @@ object FirebaseAuthManager {
 
     fun currentUser() = auth.currentUser
 
+    fun updateProfile(
+        fullName: String? = null,
+        photoUri: android.net.Uri? = null,
+        onSuccess: () -> Unit,
+        onFailure: (String) -> Unit
+    ) {
+        val user = auth.currentUser
+        if (user == null) {
+            onFailure("User not logged in")
+            return
+        }
+
+        val profileUpdates = com.google.firebase.auth.UserProfileChangeRequest.Builder().apply {
+            fullName?.let { setDisplayName(it) }
+            photoUri?.let { setPhotoUri(it) }
+        }.build()
+
+        user.updateProfile(profileUpdates)
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { onFailure(it.localizedMessage ?: "Update failed") }
+    }
+
+    fun changePassword(
+        currentPassword: String,
+        newPassword: String,
+        onSuccess: () -> Unit,
+        onFailure: (String) -> Unit
+    ) {
+        val user = auth.currentUser
+        val email = user?.email
+        if (user == null || email == null) {
+            onFailure("User session invalid")
+            return
+        }
+
+        val credential = com.google.firebase.auth.EmailAuthProvider.getCredential(email, currentPassword)
+        user.reauthenticate(credential)
+            .addOnSuccessListener {
+                user.updatePassword(newPassword)
+                    .addOnSuccessListener { onSuccess() }
+                    .addOnFailureListener { onFailure(it.localizedMessage ?: "Password change failed") }
+            }
+            .addOnFailureListener { onFailure("Incorrect current password") }
+    }
+
     fun resetPassword(
         email: String,
         onSuccess: () -> Unit,
