@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         NotificationHelper.createNotificationChannel(this)
-        // FirebaseAuthManager.initializeAppCheck(this)
+        FirebaseAuthManager.initializeAppCheck(this)
         enableEdgeToEdge()
         setContent {
             val productViewModel: ProductViewModel = viewModel()
@@ -86,7 +86,10 @@ class MainActivity : ComponentActivity() {
 
                         "NOTIFICATIONS" -> NotificationsScreen(onNavigateBack = { currentScreen = "HOME" })
 
-                        "SCANNER" -> ScannerScreen(onNavigateBack = { currentScreen = "HOME" })
+                        "SCANNER" -> ScannerScreen(
+                            viewModel = productViewModel,
+                            onNavigateBack = { currentScreen = "HOME" }
+                        )
                     }
                 }
             }

@@ -8,8 +8,11 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.work.*
 import com.example.expirytracker1.MainActivity
 import com.example.expirytracker1.R
+import com.example.expirytracker1.data.PantryItem
+import java.util.concurrent.TimeUnit
 
 object NotificationHelper {
     private const val CHANNEL_ID = "expiry_notifications"
@@ -26,6 +29,30 @@ object NotificationHelper {
                 context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
+    }
+
+    fun scheduleExpiryReminder(context: Context, item: PantryItem) {
+        val workManager = WorkManager.getInstance(context)
+        
+        // Calculate delay based on reminder selection
+        // For simplicity in this demo, we'll use a fixed short delay or a calculation
+        // In production, you'd calculate: item.expiryDate - reminderOffset - currentTime
+        
+        val data = workDataOf(
+            "title" to "FreshKeeper Reminder",
+            "message" to "${item.name} expires soon (${item.expiryDate})"
+        )
+
+        val reminderWork = OneTimeWorkRequestBuilder<ExpiryNotificationWorker>()
+            .setInitialDelay(10, TimeUnit.SECONDS) // Mock delay for testing
+            .setInputData(data)
+            .build()
+
+        workManager.enqueueUniqueWork(
+            item.id,
+            ExistingWorkPolicy.REPLACE,
+            reminderWork
+        )
     }
 
     fun showNotification(context: Context, title: String, message: String, notificationId: Int) {

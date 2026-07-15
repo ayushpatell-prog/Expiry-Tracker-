@@ -1,77 +1,92 @@
 package com.example.expirytracker1.viewmodel
 
+import android.app.Application
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.ui.graphics.Color
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BakeryDining
-import androidx.compose.material.icons.filled.Eco
-import androidx.compose.material.icons.filled.Icecream
-import androidx.compose.material.icons.filled.LocalDrink
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.expirytracker1.api.ProductData
 import com.example.expirytracker1.data.PantryItem
+import com.example.expirytracker1.notifications.NotificationHelper
+import com.example.expirytracker1.repository.ProductRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
-class ProductViewModel : ViewModel() {
-    // Shared list of products using mutableStateListOf for automatic UI updates
+class ProductViewModel(application: Application) : AndroidViewModel(application) {
+    private val repository = ProductRepository()
+    
     private val _products = mutableStateListOf<PantryItem>()
     val products: List<PantryItem> get() = _products
 
+    private val _scannedProduct = MutableStateFlow<ProductData?>(null)
+    val scannedProduct = _scannedProduct.asStateFlow()
+
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning = _isScanning.asStateFlow()
+
     init {
-        // Initial mock data
-        addInitialMockData()
+        loadProducts()
     }
 
-    private fun addInitialMockData() {
-        _products.addAll(
-            listOf(
-                PantryItem(
-                    name = "Organic Broccoli",
-                    quantity = "2",
-                    expiryDate = "24 Oct",
-                    daysLeft = 5,
-                    icon = Icons.Default.Eco,
-                    statusColor = Color(0xFFD32F2F),
-                    category = "Vegetables"
-                ),
-                PantryItem(
-                    name = "Baby Carrots",
-                    quantity = "1 bag",
-                    expiryDate = "30 Oct",
-                    daysLeft = 11,
-                    icon = Icons.Default.BakeryDining,
-                    statusColor = Color(0xFF4CAF50),
-                    category = "Vegetables"
-                ),
-                PantryItem(
-                    name = "Whole Milk",
-                    quantity = "1/2 Gal",
-                    expiryDate = "22 Oct",
-                    daysLeft = 3,
-                    icon = Icons.Default.LocalDrink,
-                    statusColor = Color(0xFFD32F2F),
-                    category = "Dairy"
-                ),
-                PantryItem(
-                    name = "Greek Yogurt",
-                    quantity = "2 cups",
-                    expiryDate = "15 Oct",
-                    daysLeft = 1,
-                    icon = Icons.Default.Icecream,
-                    statusColor = Color(0xFFFBC02D),
-                    category = "Dairy"
+    private fun loadProducts() {
+        repository.getItems { items ->
+            _products.clear()
+            _products.addAll(items)
+        }
+    }
+
+    fun scanBarcode(barcode: String) {
+        viewModelScope.launch {
+            _isScanning.value = true
+            try {
+                val product = repository.fetchProductFromApi(barcode)
+                if (product != null) {
+                    _scannedProduct.value = product
+                } else {
+                    // Product not found in database, open manual entry with barcode
+                    _scannedProduct.value = ProductData(
+                        product_name = "",
+                        brands = "",
+                        categories = "",
+                        image_url = "",
+                        code = barcode
+                    )
+                }
+            } catch (e: Exception) {
+                // Network or API failure, still allow manual entry
+                _scannedProduct.value = ProductData(
+                    product_name = "",
+                    brands = "",
+                    categories = "",
+                    image_url = "",
+                    code = barcode
                 )
-            )
-        )
+            } finally {
+                _isScanning.value = false
+            }
+        }
+    }
+
+    fun clearScannedProduct() {
+        _scannedProduct.value = null
     }
 
     fun addProduct(item: PantryItem) {
-        _products.add(item)
+        viewModelScope.launch {
+            repository.saveProduct(item)
+            NotificationHelper.scheduleExpiryReminder(getApplication(), item)
+        }
     }
 
     fun deleteProduct(item: PantryItem) {
-        _products.removeIf { it.id == item.id }
+        viewModelScope.launch {
+            repository.deleteProduct(item.id)
+        }
     }
     
     fun deleteProductById(id: String) {
-        _products.removeIf { it.id == id }
+        viewModelScope.launch {
+            repository.deleteProduct(id)
+        }
     }
 }
