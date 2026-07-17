@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.expirytracker1.ui.theme.TextGray
+import com.example.expirytracker1.notifications.NotificationRepository
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -44,27 +45,7 @@ enum class NotificationType {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationsScreen(onNavigateBack: () -> Unit) {
-    // Mock data for notifications
-    val notifications = remember {
-        mutableStateListOf(
-            NotificationItem(
-                title = "Greek Yogurt Expiring",
-                message = "Your Greek Yogurt expires tomorrow! Don't forget to use it.",
-                type = NotificationType.EXPIRY
-            ),
-            NotificationItem(
-                title = "Whole Milk Reminder",
-                message = "Whole Milk will expire in 3 days.",
-                type = NotificationType.REMINDER
-            ),
-            NotificationItem(
-                title = "Welcome to Expiry Tracker",
-                message = "Start adding items to your pantry to get notified before they expire.",
-                type = NotificationType.SYSTEM,
-                isRead = true
-            )
-        )
-    }
+    val notifications = NotificationRepository.notifications
 
     var isEditMode by remember { mutableStateOf(false) }
     val selectedIds = remember { mutableStateListOf<String>() }
@@ -111,7 +92,7 @@ fun NotificationsScreen(onNavigateBack: () -> Unit) {
 
                             IconButton(
                                 onClick = { 
-                                    notifications.removeAll { selectedIds.contains(it.id) }
+                                    NotificationRepository.deleteSelected(selectedIds)
                                     selectedIds.clear()
                                     isEditMode = false
                                 },

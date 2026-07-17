@@ -35,12 +35,13 @@ import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.TextGray
 import com.example.expirytracker1.viewmodel.ProductViewModel
 import kotlinx.coroutines.launch
-import java.util.UUID
+import java.text.SimpleDateFormat
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InventoryScreen(
-    viewModel: ProductViewModel,
+    viewModel: ProductViewModel = viewModel(),
     onNavigate: (String) -> Unit = {}
 ) {
     // --- State Management ---
@@ -52,6 +53,10 @@ fun InventoryScreen(
 
     // Filter & Sort States
     var showFilterSheet by remember { mutableStateOf(false) }
+    var selectedItemForDetails by remember { mutableStateOf<PantryItem?>(null) }
+    var selectedItemForReminder by remember { mutableStateOf<PantryItem?>(null) }
+    var itemToEdit by remember { mutableStateOf<PantryItem?>(null) }
+
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -193,6 +198,9 @@ fun InventoryScreen(
                             PantryItemCard(
                                 item = item,
                                 statusLabel = getStatus(item),
+                                onViewDetails = { selectedItemForDetails = item },
+                                onEdit = { itemToEdit = item },
+                                onSetReminder = { selectedItemForReminder = item },
                                 onDelete = {
                                     // Remove from shared ViewModel
                                     viewModel.deleteProduct(item)
@@ -212,6 +220,57 @@ fun InventoryScreen(
                         item { Spacer(modifier = Modifier.height(80.dp)) }
                     }
                 }
+            }
+        }
+
+        // --- Details and Edit Sheets ---
+        
+        if (selectedItemForDetails != null) {
+            ModalBottomSheet(
+                onDismissRequest = { selectedItemForDetails = null },
+                modifier = Modifier.fillMaxHeight(0.8f)
+            ) {
+                ItemDetailsContent(
+                    item = selectedItemForDetails!!,
+                    onEditClick = {
+                        itemToEdit = selectedItemForDetails
+                        selectedItemForDetails = null
+                    },
+                    onClose = { selectedItemForDetails = null }
+                )
+            }
+        }
+
+        if (itemToEdit != null) {
+            ModalBottomSheet(
+                onDismissRequest = { itemToEdit = null },
+                modifier = Modifier.fillMaxHeight(0.9f)
+            ) {
+                EditProductContent(
+                    item = itemToEdit!!,
+                    onSave = { updatedItem ->
+                        viewModel.addProduct(updatedItem) // Firestore 'set' handles update if ID matches
+                        itemToEdit = null
+                        scope.launch { snackbarHostState.showSnackbar("Product updated successfully") }
+                    },
+                    onCancel = { itemToEdit = null }
+                )
+            }
+        }
+
+        if (selectedItemForReminder != null) {
+            ModalBottomSheet(
+                onDismissRequest = { selectedItemForReminder = null }
+            ) {
+                ReminderSelectionContent(
+                    currentItem = selectedItemForReminder!!,
+                    onSave = { updatedItem ->
+                        viewModel.addProduct(updatedItem)
+                        selectedItemForReminder = null
+                        scope.launch { snackbarHostState.showSnackbar("Reminder updated") }
+                    },
+                    onCancel = { selectedItemForReminder = null }
+                )
             }
         }
 
@@ -277,7 +336,14 @@ fun EmptyState(isSearch: Boolean, onClear: () -> Unit) {
 }
 
 @Composable
-fun PantryItemCard(item: PantryItem, statusLabel: String, onDelete: () -> Unit) {
+fun PantryItemCard(
+    item: PantryItem, 
+    statusLabel: String, 
+    onViewDetails: () -> Unit,
+    onEdit: () -> Unit,
+    onSetReminder: () -> Unit,
+    onDelete: () -> Unit
+) {
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -341,17 +407,26 @@ fun PantryItemCard(item: PantryItem, statusLabel: String, onDelete: () -> Unit) 
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                         DropdownMenuItem(
                             text = { Text("View Details") },
-                            onClick = { showMenu = false },
+                            onClick = { 
+                                showMenu = false
+                                onViewDetails()
+                            },
                             leadingIcon = { Icon(Icons.Default.Visibility, contentDescription = "View Details") }
                         )
                         DropdownMenuItem(
                             text = { Text("Edit Product") },
-                            onClick = { showMenu = false },
+                            onClick = { 
+                                showMenu = false
+                                onEdit()
+                            },
                             leadingIcon = { Icon(Icons.Default.Edit, contentDescription = "Edit Product") }
                         )
                         DropdownMenuItem(
                             text = { Text("Set Reminder") },
-                            onClick = { showMenu = false },
+                            onClick = { 
+                                showMenu = false
+                                onSetReminder()
+                            },
                             leadingIcon = { Icon(Icons.Default.Notifications, contentDescription = "Set Reminder") }
                         )
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -517,27 +592,96 @@ fun CategoryChip(text: String, icon: ImageVector? = null, isSelected: Boolean = 
 }
 
 @Composable
+fun ItemDetailsContent(item: PantryItem, onEditClick: () -> Unit, onClose: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Product Details", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close") }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(100.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(item.icon, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+            }
+            Spacer(Modifier.width(20.dp))
+            Column {
+                Text(item.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(item.category, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+
+        DetailRow(label = "Quantity", value = item.quantity)
+        DetailRow(label = "Expiry Date", value = item.expiryDate, valueColor = Color(0xFFD32F2F))
+        DetailRow(label = "Purchase Date", value = item.purchaseDate.ifBlank { "Not set" })
+        DetailRow(label = "Reminder", value = item.reminder)
+        
+        if (item.notes.isNotBlank()) {
+            Column {
+                Text("Notes", style = MaterialTheme.typography.labelLarge, color = TextGray)
+                Text(item.notes, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Button(
+            onClick = onEditClick,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(Icons.Default.Edit, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Edit Product")
+        }
+    }
+}
+
+@Composable
 fun InventoryBottomNavigation(onNavigate: (String) -> Unit) {
     NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 8.dp) {
         val navItems = listOf(
             Triple("Home", Icons.Outlined.Home, "HOME"),
             Triple("Inventory", Icons.Filled.Inventory2, "INVENTORY"),
-            Triple("Assistant", Icons.Outlined.AutoAwesome, "ASSISTANT"),
-            Triple("Settings", Icons.Outlined.Settings, "SETTINGS")
+            Triple("Alerts", Icons.Outlined.NotificationsActive, "ALERTS"),
+            Triple("Settings", Icons.Outlined.Settings, "PROFILE")
         )
         navItems.forEach { (label, icon, route) ->
             val isSelected = route == "INVENTORY"
             NavigationBarItem(
                 icon = {
                     if (isSelected) {
-                        Box(modifier = Modifier.size(48.dp, 32.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp, 32.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.primary)
                         }
                     } else {
                         Icon(icon, contentDescription = label)
                     }
                 },
-                label = { Text(label, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                label = { 
+                    Text(
+                        label, 
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    ) 
+                },
                 selected = isSelected,
                 onClick = { if (!isSelected) onNavigate(route) }
             )
@@ -545,8 +689,108 @@ fun InventoryBottomNavigation(onNavigate: (String) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditProductContent(item: PantryItem, onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
+    var name by remember { mutableStateOf(item.name) }
+    var quantity by remember { mutableStateOf(item.quantity) }
+    var notes by remember { mutableStateOf(item.notes) }
+    var expDate by remember { mutableLongStateOf(item.expiryTimestamp) }
+
+    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = item.expiryTimestamp)
+    var showDatePicker by remember { mutableStateOf(false) }
+    val displayDateFormat = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("Edit Product", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+
+        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Product Name") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = quantity, onValueChange = { quantity = it }, label = { Text("Quantity") }, modifier = Modifier.fillMaxWidth())
+        
+        OutlinedTextField(
+            value = displayDateFormat.format(Date(expDate)),
+            onValueChange = {},
+            label = { Text("Expiry Date") },
+            readOnly = true,
+            modifier = Modifier.fillMaxWidth(),
+            trailingIcon = { IconButton(onClick = { showDatePicker = true }) { Icon(Icons.Default.CalendarToday, null) } }
+        )
+
+        OutlinedTextField(value = notes, onValueChange = { notes = it }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onCancel) { Text("Cancel") }
+            Spacer(Modifier.width(12.dp))
+            Button(onClick = {
+                onSave(item.copy(name = name, quantity = quantity, notes = notes, expiryTimestamp = expDate, expiryDate = SimpleDateFormat("dd MMM", Locale.getDefault()).format(Date(expDate))))
+            }, enabled = name.isNotBlank()) {
+                Text("Save Changes")
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { expDate = it }
+                    showDatePicker = false
+                }) { Text("OK") }
+            }
+        ) { DatePicker(state = datePickerState) }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 fun InventoryScreenPreview() {
     ExpiryTracker1Theme { InventoryScreen(viewModel = viewModel()) }
+}
+
+@Composable
+fun DetailRow(label: String, value: String, valueColor: Color = MaterialTheme.colorScheme.onSurface) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = TextGray)
+        Text(value, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = valueColor)
+        HorizontalDivider(modifier = Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+    }
+}
+
+@Composable
+fun ReminderSelectionContent(currentItem: PantryItem, onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
+    val reminders = listOf("On Expiry Day", "1 Day Before", "3 Days Before", "7 Days Before")
+    var selectedReminder by remember { mutableStateOf(currentItem.reminder) }
+
+    Column(modifier = Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("Set Reminder", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        
+        reminders.forEach { option ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { selectedReminder = option }
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(selected = (option == selectedReminder), onClick = null)
+                Spacer(Modifier.width(16.dp))
+                Text(option, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onCancel) { Text("Cancel") }
+            Spacer(Modifier.width(12.dp))
+            Button(onClick = { onSave(currentItem.copy(reminder = selectedReminder)) }) {
+                Text("Save")
+            }
+        }
+    }
 }

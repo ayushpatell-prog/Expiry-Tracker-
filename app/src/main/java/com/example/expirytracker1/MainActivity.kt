@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
             var darkMode by remember { mutableStateOf(false) }
             ExpiryTracker1Theme(darkTheme = darkMode) {
                 var currentScreen by remember { 
-                    mutableStateOf(if (FirebaseAuthManager.currentUser() != null) "HOME" else "LOGIN") 
+                    mutableStateOf(if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser != null) "HOME" else "LOGIN")
                 }
 
                 AnimatedContent(
@@ -76,8 +76,7 @@ class MainActivity : ComponentActivity() {
                             viewModel = productViewModel,
                             onNavigate = { currentScreen = it }
                         )
-                        "ASSISTANT" -> AssistantScreen(onNavigate = { currentScreen = it })
-                        "SETTINGS" -> SettingsScreen(onNavigate = { currentScreen = it })
+                        "ALERTS" -> SettingsScreen(onNavigate = { currentScreen = it })
                         "PROFILE" -> ProfileScreen(
                             darkMode = darkMode,
                             onDarkModeChange = { darkMode = it },
