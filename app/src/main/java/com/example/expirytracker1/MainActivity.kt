@@ -76,8 +76,7 @@ class MainActivity : ComponentActivity() {
                             viewModel = productViewModel,
                             onNavigate = { currentScreen = it }
                         )
-                        "ASSISTANT" -> AssistantScreen(onNavigate = { currentScreen = it })
-                        "SETTINGS" -> SettingsScreen(onNavigate = { currentScreen = it })
+                        "ALERTS" -> SettingsScreen(onNavigate = { currentScreen = it })
                         "PROFILE" -> ProfileScreen(
                             darkMode = darkMode,
                             onDarkModeChange = { darkMode = it },

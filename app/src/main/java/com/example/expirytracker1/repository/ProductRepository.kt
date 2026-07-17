@@ -38,7 +38,16 @@ class ProductRepository {
     }
 
     fun getItems(onUpdate: (List<PantryItem>) -> Unit) {
-        getItemsCollection()?.addSnapshotListener { snapshot, _ ->
+        val collection = getItemsCollection()
+        if (collection == null) {
+            onUpdate(emptyList())
+            return
+        }
+        collection.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                android.util.Log.e("FIRESTORE", "Listen failed", error)
+                return@addSnapshotListener
+            }
             val items = snapshot?.toObjects(PantryItem::class.java) ?: emptyList()
             onUpdate(items)
         }

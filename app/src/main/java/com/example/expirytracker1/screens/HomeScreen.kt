@@ -30,6 +30,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 import com.example.expirytracker1.data.PantryItem
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.TextGray
@@ -194,6 +195,13 @@ fun HomeScreen(
 
 @Composable
 fun HeaderSection(userName: String, subtitle: String, onProfileClick: () -> Unit, onNotificationClick: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val user = com.example.expirytracker1.auth.FirebaseAuthManager.currentUser()
+    
+    // Check for local profile picture first
+    val localFile = java.io.File(context.filesDir, "profile_picture.jpg")
+    val photoUrl = if (localFile.exists()) android.net.Uri.fromFile(localFile) else user?.photoUrl
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -203,18 +211,30 @@ fun HeaderSection(userName: String, subtitle: String, onProfileClick: () -> Unit
             modifier = Modifier.clickable(onClickLabel = "View Profile") { onProfileClick() },
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Person, 
-                    contentDescription = null, 
-                    tint = MaterialTheme.colorScheme.primary
+            if (photoUrl != null) {
+                AsyncImage(
+                    model = photoUrl,
+                    contentDescription = "Profile Picture",
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
                 )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Person, 
+                        contentDescription = null, 
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(12.dp))
             Column {
@@ -610,13 +630,10 @@ fun ManualAddContent(onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
-                        val diff = expDate - System.currentTimeMillis()
-                        val daysLeft = (diff / (1000 * 60 * 60 * 24)).toInt().coerceAtLeast(0)
-                        
                         onSave(PantryItem(
                             name = name,
                             category = category,
-                            daysLeft = daysLeft,
+                            expiryTimestamp = expDate,
                             quantity = quantity.ifBlank { "1" },
                             expiryDate = dateFormat.format(Date(expDate))
                         ))
@@ -679,16 +696,16 @@ fun BottomNavigationBar(onNavigate: (String) -> Unit) {
             onClick = { onNavigate("INVENTORY") }
         )
         NavigationBarItem(
-            icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = "Assistant") },
-            label = { Text("Assistant") },
+            icon = { Icon(Icons.Outlined.NotificationsActive, contentDescription = "Alerts") },
+            label = { Text("Alerts") },
             selected = false,
-            onClick = { onNavigate("ASSISTANT") }
+            onClick = { onNavigate("ALERTS") }
         )
         NavigationBarItem(
             icon = { Icon(Icons.Outlined.Settings, contentDescription = "Settings") },
             label = { Text("Settings") },
             selected = false,
-            onClick = { onNavigate("SETTINGS") }
+            onClick = { onNavigate("PROFILE") }
         )
     }
 }

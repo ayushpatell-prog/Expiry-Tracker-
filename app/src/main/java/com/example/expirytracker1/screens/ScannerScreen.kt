@@ -581,9 +581,6 @@ fun ProductEntryContent(
             Button(
                 onClick = {
                     if (name.isNotBlank() && quantity.isNotBlank()) {
-                        val diff = expiryDate - System.currentTimeMillis()
-                        val daysLeft = (diff / (1000 * 60 * 60 * 24)).toInt().coerceAtLeast(0)
-                        
                         onSave(PantryItem(
                             name = name,
                             brand = itemBrand,
@@ -593,7 +590,7 @@ fun ProductEntryContent(
                             imageUrl = imageUrl,
                             purchaseDate = dateFormat.format(Date(purchaseDate)),
                             expiryDate = dateFormat.format(Date(expiryDate)),
-                            daysLeft = daysLeft,
+                            expiryTimestamp = expiryDate,
                             reminder = reminder,
                             notes = notes
                         ))

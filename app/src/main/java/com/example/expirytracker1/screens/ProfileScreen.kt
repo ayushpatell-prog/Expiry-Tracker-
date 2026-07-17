@@ -36,6 +36,8 @@ import com.example.expirytracker1.ui.theme.SageGreenBackground
 import com.example.expirytracker1.ui.theme.TextGray
 import com.example.expirytracker1.auth.FirebaseAuthManager
 
+import java.io.FileOutputStream
+
 @Composable
 fun ProfileScreen(
     darkMode: Boolean,
@@ -47,41 +49,62 @@ fun ProfileScreen(
     var showChangePasswordDialog by remember { mutableStateOf(false) }
     var showImagePickerDialog by remember { mutableStateOf(false) }
     
+    // Persistent Local Image Path
+    val profileImageFile = File(context.filesDir, "profile_picture.jpg")
+    var profileImageUri by remember { mutableStateOf<Uri?>(if (profileImageFile.exists()) Uri.fromFile(profileImageFile) else null) }
+
+    fun saveImageLocally(uri: Uri) {
+        try {
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val outputStream = FileOutputStream(profileImageFile)
+            inputStream?.use { input ->
+                outputStream.use { output ->
+                    input.copyTo(output)
+                }
+            }
+            profileImageUri = Uri.fromFile(profileImageFile)
+            // Also update Firebase profile with local path (optional, for same-device persistence)
+            FirebaseAuthManager.updateProfile(photoUri = profileImageUri, onSuccess = {}, onFailure = {})
+            Toast.makeText(context, "Profile picture updated", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "Failed to save image locally", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
     // Image Picking Logic
     var tempImageUri by remember { mutableStateOf<Uri?>(null) }
     
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let {
-            FirebaseAuthManager.updateProfile(photoUri = it, onSuccess = {
-                Toast.makeText(context, "Profile picture updated", Toast.LENGTH_SHORT).show()
-            }, onFailure = { err ->
-                Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
-            })
-        }
+        uri?.let { saveImageLocally(it) }
     }
     
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
         if (success) {
-            tempImageUri?.let { uri ->
-                FirebaseAuthManager.updateProfile(photoUri = uri, onSuccess = {
-                    Toast.makeText(context, "Profile picture updated", Toast.LENGTH_SHORT).show()
-                }, onFailure = { err ->
-                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
-                })
-            }
+            tempImageUri?.let { saveImageLocally(it) }
         }
     }
 
     fun createImageUri(): Uri {
-        val directory = File(context.externalCacheDir, "camera_images")
+        val directory = File(context.cacheDir, "camera_images")
         if (!directory.exists()) directory.mkdirs()
         val file = File(directory, "profile_${System.currentTimeMillis()}.jpg")
         return FileProvider.getUriForFile(context, "com.example.expirytracker1.fileprovider", file)
     }
+
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { granted ->
+            if (granted) {
+                showImagePickerDialog = true
+            } else {
+                Toast.makeText(context, "Camera permission denied", Toast.LENGTH_SHORT).show()
+            }
+        }
+    )
 
     Scaffold(
         bottomBar = { ProfileBottomNavigation(onNavigate) },
@@ -105,7 +128,17 @@ fun ProfileScreen(
             }
 
             item {
-                ProfileHeaderCard(onEditPhotoClick = { showImagePickerDialog = true })
+                ProfileHeaderCard(
+                    localPhotoUri = profileImageUri,
+                    onEditPhotoClick = { 
+                        val permissionCheck = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA)
+                        if (permissionCheck == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            showImagePickerDialog = true
+                        } else {
+                            launcher.launch(android.Manifest.permission.CAMERA)
+                        }
+                    }
+                )
             }
 
             item {
@@ -293,13 +326,13 @@ fun ProfileScreen(
 }
 
 @Composable
-fun ProfileHeaderCard(onEditPhotoClick: () -> Unit = {}) {
+fun ProfileHeaderCard(localPhotoUri: Uri? = null, onEditPhotoClick: () -> Unit = {}) {
 
     val user = FirebaseAuthManager.currentUser()
 
     val name = user?.displayName ?: "User"
     val email = user?.email ?: "No Email"
-    val photoUrl = user?.photoUrl
+    val photoUrl = localPhotoUri ?: user?.photoUrl
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -463,30 +496,41 @@ fun ProfileBottomNavigation(onNavigate: (String) -> Unit) {
         containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 8.dp
     ) {
-        NavigationBarItem(
-            icon = { Icon(Icons.Outlined.Home, contentDescription = "Home") },
-            label = { Text("Home") },
-            selected = false,
-            onClick = { onNavigate("HOME") }
+        val navItems = listOf(
+            Triple("Home", Icons.Outlined.Home, "HOME"),
+            Triple("Inventory", Icons.Outlined.Inventory2, "INVENTORY"),
+            Triple("Alerts", Icons.Outlined.NotificationsActive, "ALERTS"),
+            Triple("Settings", Icons.Filled.Settings, "PROFILE")
         )
-        NavigationBarItem(
-            icon = { Icon(Icons.Outlined.Inventory2, contentDescription = "Inventory") },
-            label = { Text("Inventory") },
-            selected = false,
-            onClick = { onNavigate("INVENTORY") }
-        )
-        NavigationBarItem(
-            icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = "AI Assistant") },
-            label = { Text("AI Assistant") },
-            selected = false,
-            onClick = { onNavigate("ASSISTANT") }
-        )
-        NavigationBarItem(
-            icon = { Icon(Icons.Outlined.Settings, contentDescription = "Settings") },
-            label = { Text("Settings") },
-            selected = false,
-            onClick = { onNavigate("SETTINGS") }
-        )
+        navItems.forEach { (label, icon, route) ->
+            val isSelected = route == "PROFILE"
+            NavigationBarItem(
+                icon = {
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp, 32.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.primary)
+                        }
+                    } else {
+                        Icon(icon, contentDescription = label)
+                    }
+                },
+                label = { 
+                    Text(
+                        label, 
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    ) 
+                },
+                selected = isSelected,
+                onClick = { if (!isSelected) onNavigate(route) }
+            )
+        }
     }
 }
 
