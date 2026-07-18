@@ -694,17 +694,11 @@ fun ManualAddContent(onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
-<<<<<<< HEAD
-                        val diff = expDate - System.currentTimeMillis()
-                        val daysLeft = (diff / (1000 * 60 * 60 * 24)).toInt().coerceAtLeast(0)
-                        
                         var finalImageUrl = imageUrl
                         if (capturedBitmap != null) {
                             finalImageUrl = saveBitmapToLocalFile(context, capturedBitmap!!) ?: ""
                         }
 
-=======
->>>>>>> origin/main
                         onSave(PantryItem(
                             name = name,
                             category = category,
