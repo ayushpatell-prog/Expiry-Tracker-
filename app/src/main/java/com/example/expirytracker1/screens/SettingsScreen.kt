@@ -221,40 +221,41 @@ fun SettingsBottomNavigation(onNavigate: (String) -> Unit) {
         containerColor = MaterialTheme.colorScheme.surface,
         tonalElevation = 8.dp
     ) {
-        NavigationBarItem(
-            icon = { Icon(Icons.Outlined.Home, contentDescription = "Home") },
-            label = { Text("Home") },
-            selected = false,
-            onClick = { onNavigate("HOME") }
+        val navItems = listOf(
+            Triple("Home", Icons.Outlined.Home, "HOME"),
+            Triple("Inventory", Icons.Outlined.Inventory2, "INVENTORY"),
+            Triple("Alerts", Icons.Filled.NotificationsActive, "ALERTS"),
+            Triple("Settings", Icons.Outlined.Settings, "PROFILE")
         )
-        NavigationBarItem(
-            icon = { Icon(Icons.Outlined.Inventory2, contentDescription = "Inventory") },
-            label = { Text("Inventory") },
-            selected = false,
-            onClick = { onNavigate("INVENTORY") }
-        )
-        NavigationBarItem(
-            icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = "Assistant") },
-            label = { Text("Assistant") },
-            selected = false,
-            onClick = { onNavigate("ASSISTANT") }
-        )
-        NavigationBarItem(
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp, 32.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.primary)
-                }
-            },
-            label = { Text("Settings", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) },
-            selected = true,
-            onClick = { }
-        )
+        navItems.forEach { (label, icon, route) ->
+            val isSelected = route == "ALERTS"
+            NavigationBarItem(
+                icon = {
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp, 32.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.primary)
+                        }
+                    } else {
+                        Icon(icon, contentDescription = label)
+                    }
+                },
+                label = { 
+                    Text(
+                        label, 
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    ) 
+                },
+                selected = isSelected,
+                onClick = { if (!isSelected) onNavigate(route) }
+            )
+        }
     }
 }
 

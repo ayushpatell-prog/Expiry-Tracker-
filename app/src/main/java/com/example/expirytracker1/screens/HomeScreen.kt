@@ -100,7 +100,25 @@ fun HomeScreen(
         ) {
             item {
                 Spacer(modifier = Modifier.height(20.dp))
+                val user = com.example.expirytracker1.auth.FirebaseAuthManager.currentUser()
+                val userName = user?.displayName ?: "User"
+                
+                // Dynamic Expiry Message Logic
+                val expiringSoonCount = itemsState.count { it.daysLeft in 0..3 }
+                val subtitle = when {
+                    itemsState.isEmpty() -> "Your pantry is empty."
+                    expiringSoonCount == 0 -> "Everything is fresh!"
+                    expiringSoonCount == 1 -> {
+                        val item = itemsState.find { it.daysLeft in 0..3 }
+                        if (item?.daysLeft == 0) "1 item expires today!" 
+                        else "1 item expiring soon."
+                    }
+                    else -> "$expiringSoonCount items expiring soon."
+                }
+
                 HeaderSection(
+                    userName = userName,
+                    subtitle = subtitle,
                     onProfileClick = { onNavigate("PROFILE") },
                     onNotificationClick = { onNavigate("NOTIFICATIONS") }
                 )
@@ -180,7 +198,14 @@ fun HomeScreen(
 }
 
 @Composable
-fun HeaderSection(onProfileClick: () -> Unit, onNotificationClick: () -> Unit) {
+fun HeaderSection(userName: String, subtitle: String, onProfileClick: () -> Unit, onNotificationClick: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val user = com.example.expirytracker1.auth.FirebaseAuthManager.currentUser()
+    
+    // Check for local profile picture first
+    val localFile = java.io.File(context.filesDir, "profile_picture.jpg")
+    val photoUrl = if (localFile.exists()) android.net.Uri.fromFile(localFile) else user?.photoUrl
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -190,31 +215,45 @@ fun HeaderSection(onProfileClick: () -> Unit, onNotificationClick: () -> Unit) {
             modifier = Modifier.clickable(onClickLabel = "View Profile") { onProfileClick() },
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Person, 
-                    contentDescription = null, 
-                    tint = MaterialTheme.colorScheme.primary
+            if (photoUrl != null) {
+                AsyncImage(
+                    model = photoUrl,
+                    contentDescription = "Profile Picture",
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
                 )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Person, 
+                        contentDescription = null, 
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(12.dp))
             Column {
                 Text(
-                    text = "Hello, User!",
+                    text = "Hello, $userName!",
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "You have items expiring soon.",
+                    text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextGray
+                    color = if (subtitle.contains("today") || subtitle.contains("soon") && !subtitle.contains("No")) 
+                        MaterialTheme.colorScheme.error 
+                    else TextGray
                 )
             }
         }
@@ -655,6 +694,7 @@ fun ManualAddContent(onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
+<<<<<<< HEAD
                         val diff = expDate - System.currentTimeMillis()
                         val daysLeft = (diff / (1000 * 60 * 60 * 24)).toInt().coerceAtLeast(0)
                         
@@ -663,10 +703,12 @@ fun ManualAddContent(onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
                             finalImageUrl = saveBitmapToLocalFile(context, capturedBitmap!!) ?: ""
                         }
 
+=======
+>>>>>>> origin/main
                         onSave(PantryItem(
                             name = name,
                             category = category,
-                            daysLeft = daysLeft,
+                            expiryTimestamp = expDate,
                             quantity = quantity.ifBlank { "1" },
                             expiryDate = dateFormat.format(Date(expDate)),
                             imageUrl = finalImageUrl
@@ -764,16 +806,16 @@ fun BottomNavigationBar(onNavigate: (String) -> Unit) {
             onClick = { onNavigate("INVENTORY") }
         )
         NavigationBarItem(
-            icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = "Assistant") },
-            label = { Text("Assistant") },
+            icon = { Icon(Icons.Outlined.NotificationsActive, contentDescription = "Alerts") },
+            label = { Text("Alerts") },
             selected = false,
-            onClick = { onNavigate("ASSISTANT") }
+            onClick = { onNavigate("ALERTS") }
         )
         NavigationBarItem(
             icon = { Icon(Icons.Outlined.Settings, contentDescription = "Settings") },
             label = { Text("Settings") },
             selected = false,
-            onClick = { onNavigate("SETTINGS") }
+            onClick = { onNavigate("PROFILE") }
         )
     }
 }

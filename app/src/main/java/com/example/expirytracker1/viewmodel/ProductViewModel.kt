@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.expirytracker1.api.ProductData
 import com.example.expirytracker1.data.PantryItem
 import com.example.expirytracker1.notifications.NotificationHelper
+import com.example.expirytracker1.notifications.NotificationRepository
+import com.example.expirytracker1.screens.NotificationType
 import com.example.expirytracker1.repository.ProductRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,7 +34,45 @@ class ProductViewModel(application: Application) : AndroidViewModel(application)
         repository.getItems { items ->
             _products.clear()
             _products.addAll(items)
+            checkExpirations()
         }
+    }
+
+    private fun checkExpirations() {
+        _products.forEach { item ->
+            generateNotificationIfNecessary(item)
+        }
+    }
+
+    private fun generateNotificationIfNecessary(item: PantryItem) {
+        val title: String
+        val message: String
+        val type: NotificationType
+
+        when (item.daysLeft) {
+            0 -> {
+                title = "${item.name} Expires Today!"
+                message = "Your ${item.name} reached its expiry date. Use it now!"
+                type = NotificationType.EXPIRY
+            }
+            in 1..3 -> {
+                title = "${item.name} Expiring Soon"
+                message = "${item.name} will expire in ${item.daysLeft} days."
+                type = NotificationType.REMINDER
+            }
+            else -> return
+        }
+
+        // Add to in-app real-time screen repository
+        NotificationRepository.addNotification(title, message, type)
+        
+        // Ensure system tray notification
+        NotificationHelper.showNotification(
+            getApplication(),
+            title,
+            message,
+            item.id.hashCode()
+        )
     }
 
     fun scanBarcode(barcode: String) {

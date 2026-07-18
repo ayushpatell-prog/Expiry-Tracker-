@@ -11,6 +11,7 @@ import android.os.VibratorManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.launch
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -800,7 +801,7 @@ fun ProductEntryContent(
                             imageUrl = finalImageUrl,
                             purchaseDate = dateFormat.format(Date(purchaseDate)),
                             expiryDate = dateFormat.format(Date(expiryDate)),
-                            daysLeft = daysLeft,
+                            expiryTimestamp = expiryDate,
                             reminder = reminder,
                             notes = notes
                         ))
