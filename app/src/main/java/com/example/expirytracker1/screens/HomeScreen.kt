@@ -1,8 +1,10 @@
 package com.example.expirytracker1.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.launch
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,7 +22,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -178,7 +183,6 @@ fun HomeScreen(
             onDismissRequest = { showManualAdd = false },
             modifier = Modifier.fillMaxHeight(0.9f)
         ) {
-            val dateFormat = SimpleDateFormat("dd MMM", Locale.getDefault())
             ManualAddContent(
                 onSave = { newItem ->
                     viewModel.addProduct(newItem)
@@ -369,14 +373,23 @@ fun InventoryCard(item: PantryItem) {
                         modifier = Modifier
                             .size(56.dp)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f)),
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            item.icon, 
-                            contentDescription = null, 
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                        if (item.imageUrl.isNotBlank()) {
+                            AsyncImage(
+                                model = item.imageUrl,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Icon(
+                                item.icon, 
+                                contentDescription = null, 
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Column(modifier = Modifier.padding(end = 8.dp)) {
@@ -513,21 +526,39 @@ fun AddOptionsContent(onScanClick: () -> Unit, onManualClick: () -> Unit, onCanc
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ManualAddContent(onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
+    val context = LocalContext.current
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Vegetables") }
     var quantity by remember { mutableStateOf("") }
     var manDate by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var expDate by remember { mutableLongStateOf(System.currentTimeMillis() + 86400000 * 7) }
     var reminder by remember { mutableStateOf("On Expiry Date") }
+    var imageUrl by remember { mutableStateOf("") }
+    var capturedBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     
     var showCatDropdown by remember { mutableStateOf(false) }
     var showRemDropdown by remember { mutableStateOf(false) }
+    var showPhotoOptions by remember { mutableStateOf(false) }
     
     val datePickerState = rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis())
     var showDatePickerFor by remember { mutableStateOf<String?>(null) }
 
     val categories = listOf("Vegetables", "Fruits", "Dairy", "Meat", "Bakery", "Frozen", "Beverages", "Others")
     val reminders = listOf("On Expiry Date", "1 Day Before", "3 Days Before", "7 Days Before")
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri ->
+            uri?.let { imageUrl = it.toString(); capturedBitmap = null }
+        }
+    )
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview(),
+        onResult = { bitmap ->
+            bitmap?.let { capturedBitmap = it; imageUrl = "" }
+        }
+    )
 
     Column(
         modifier = Modifier
@@ -538,13 +569,46 @@ fun ManualAddContent(onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
     ) {
         Text(text = "Add Manually", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Product Name") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        
+        // Photo Section
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable { showPhotoOptions = true },
+                contentAlignment = Alignment.Center
+            ) {
+                if (capturedBitmap != null) {
+                    Image(
+                        bitmap = capturedBitmap!!.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else if (imageUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = imageUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.AddAPhoto, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Text("Add Photo", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Product Name") },
+                modifier = Modifier.weight(1f)
+            )
+        }
+
         Box {
             OutlinedTextField(
                 value = category,
@@ -630,18 +694,43 @@ fun ManualAddContent(onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
             Button(
                 onClick = {
                     if (name.isNotBlank()) {
+                        var finalImageUrl = imageUrl
+                        if (capturedBitmap != null) {
+                            finalImageUrl = saveBitmapToLocalFile(context, capturedBitmap!!) ?: ""
+                        }
+
                         onSave(PantryItem(
                             name = name,
                             category = category,
                             expiryTimestamp = expDate,
                             quantity = quantity.ifBlank { "1" },
-                            expiryDate = dateFormat.format(Date(expDate))
+                            expiryDate = dateFormat.format(Date(expDate)),
+                            imageUrl = finalImageUrl
                         ))
                     }
                 },
                 enabled = name.isNotBlank()
             ) {
                 Text("Save Product")
+            }
+        }
+    }
+
+    if (showPhotoOptions) {
+        ModalBottomSheet(onDismissRequest = { showPhotoOptions = false }) {
+            Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
+                Text("Select Photo", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(16.dp))
+                ListItem(
+                    headlineContent = { Text("Click Photo") },
+                    leadingContent = { Icon(Icons.Default.CameraAlt, null) },
+                    modifier = Modifier.clickable { cameraLauncher.launch(); showPhotoOptions = false }
+                )
+                ListItem(
+                    headlineContent = { Text("Choose from Gallery") },
+                    leadingContent = { Icon(Icons.Default.PhotoLibrary, null) },
+                    modifier = Modifier.clickable { galleryLauncher.launch("image/*"); showPhotoOptions = false }
+                )
             }
         }
     }
@@ -664,6 +753,21 @@ fun ManualAddContent(onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+}
+
+private fun saveBitmapToLocalFile(context: android.content.Context, bitmap: android.graphics.Bitmap): String? {
+    return try {
+        val filename = "product_${System.currentTimeMillis()}.jpg"
+        val file = java.io.File(context.filesDir, filename)
+        val out = java.io.FileOutputStream(file)
+        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
+        out.flush()
+        out.close()
+        file.absolutePath
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
     }
 }
 

@@ -1,16 +1,25 @@
 package com.example.expirytracker1.screens
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.launch
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -24,11 +33,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview as ComposePreview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,10 +58,21 @@ import com.example.expirytracker1.data.PantryItem
 import com.example.expirytracker1.scanner.BarcodeAnalyzer
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.viewmodel.ProductViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
+
+enum class ScanStep {
+    WAITING_FOR_BARCODE,
+    WAITING_FOR_EXPIRY,
+    CROP_PREVIEW,
+    EXPIRY_FAILED,
+    CONFIRMATION
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,26 +85,33 @@ fun ScannerScreen(
     val scannedProduct by viewModel.scannedProduct.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     
-    // Store temporarily parsed GS1 expiry
-    var gs1ExpiryDate by remember { mutableStateOf<String?>(null) }
+    var scanStep by remember { mutableStateOf(ScanStep.WAITING_FOR_BARCODE) }
+    var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var detectedExpiryDate by remember { mutableStateOf<String?>(null) }
+    var isProcessingOcr by remember { mutableStateOf(false) }
+    
     var isFlashOn by remember { mutableStateOf(false) }
     var cameraControl by remember { mutableStateOf<CameraControl?>(null) }
-
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-        onResult = { uri ->
-            uri?.let {
-                val inputImage = com.google.mlkit.vision.common.InputImage.fromFilePath(context, it)
-                val analyzer = BarcodeAnalyzer { barcode, expiry ->
-                    if (expiry != null) gs1ExpiryDate = expiry
-                    if (barcode != null) viewModel.scanBarcode(barcode)
-                }
-                analyzer.analyzeImage(inputImage)
+    
+    val analyzer = remember { 
+        BarcodeAnalyzer { barcode, _ ->
+            if (scanStep == ScanStep.WAITING_FOR_BARCODE && barcode != null) {
+                viewModel.scanBarcode(barcode)
             }
         }
-    )
+    }
 
-    var showBottomSheet by remember { mutableStateOf(false) }
+    LaunchedEffect(scanStep) {
+        analyzer.isBarcodeScanningEnabled = (scanStep == ScanStep.WAITING_FOR_BARCODE)
+    }
+
+    LaunchedEffect(scannedProduct) {
+        if (scannedProduct != null && scanStep == ScanStep.WAITING_FOR_BARCODE) {
+            vibrate(context)
+            scanStep = ScanStep.WAITING_FOR_EXPIRY
+        }
+    }
+
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -101,73 +137,71 @@ fun ScannerScreen(
         }
     }
 
-    LaunchedEffect(scannedProduct) {
-        if (scannedProduct != null) {
-            showBottomSheet = true
-        }
-    }
-
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        if (hasCameraPermission) {
+        if (hasCameraPermission && scanStep != ScanStep.CROP_PREVIEW) {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
-                onBarcodeDetected = { barcode, expiry ->
-                    if (!isScanning && !showBottomSheet) {
-                        if (expiry != null && gs1ExpiryDate != expiry) {
-                            gs1ExpiryDate = expiry
-                        }
-                        if (barcode != null) {
-                            viewModel.scanBarcode(barcode)
-                        }
-                    }
-                },
+                analyzer = analyzer,
                 onCameraControlReady = { cameraControl = it }
             )
-        } else {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(64.dp))
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Camera Permission Required",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }, modifier = Modifier.padding(top = 16.dp)) {
-                        Text("Grant Permission")
-                    }
-                }
-            }
         }
 
-        ScannerOverlay(
-            onNavigateBack = onNavigateBack,
-            onManualClick = { showBottomSheet = true },
-            onGalleryClick = { galleryLauncher.launch("image/*") },
-            onFlashClick = {
-                isFlashOn = !isFlashOn
-                cameraControl?.enableTorch(isFlashOn)
-            },
-            isFlashOn = isFlashOn
-        )
+        if (scanStep != ScanStep.CROP_PREVIEW) {
+            ScannerOverlay(
+                scanStep = scanStep,
+                productName = scannedProduct?.product_name,
+                onNavigateBack = onNavigateBack,
+                onCaptureExpiry = {
+                    analyzer.onImageCaptured = { bitmap ->
+                        capturedBitmap = bitmap
+                        scanStep = ScanStep.CROP_PREVIEW
+                    }
+                    analyzer.isCaptureRequested = true
+                },
+                onFlashClick = {
+                    isFlashOn = !isFlashOn
+                    cameraControl?.enableTorch(isFlashOn)
+                },
+                isFlashOn = isFlashOn
+            )
+        }
 
-        if (isScanning) {
+        if (scanStep == ScanStep.CROP_PREVIEW && capturedBitmap != null) {
+            CropPreviewScreen(
+                bitmap = capturedBitmap!!,
+                onRetake = { 
+                    scanStep = ScanStep.WAITING_FOR_EXPIRY 
+                },
+                onContinue = { adjustedBitmap ->
+                    isProcessingOcr = true
+                    analyzer.performOcrOnBitmap(adjustedBitmap) { result ->
+                        isProcessingOcr = false
+                        if (result != null) {
+                            detectedExpiryDate = result
+                            scanStep = ScanStep.CONFIRMATION
+                            vibrate(context)
+                        } else {
+                            scanStep = ScanStep.EXPIRY_FAILED
+                        }
+                    }
+                }
+            )
+        }
+
+        if (isScanning || isProcessingOcr) {
             Box(
-                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         }
 
-        if (showBottomSheet) {
+        if (scanStep == ScanStep.CONFIRMATION) {
             ModalBottomSheet(
                 onDismissRequest = { 
-                    showBottomSheet = false
-                    viewModel.clearScannedProduct()
+                    scanStep = ScanStep.WAITING_FOR_EXPIRY
+                    detectedExpiryDate = null
                 },
                 modifier = Modifier.fillMaxHeight(0.9f)
             ) {
@@ -177,12 +211,10 @@ fun ScannerScreen(
                     imageUrl = scannedProduct?.image_url ?: "",
                     barcode = scannedProduct?.code ?: "",
                     category = scannedProduct?.categories?.split(",")?.firstOrNull() ?: "Others",
-                    preFillExpiry = gs1ExpiryDate,
+                    preFillExpiry = detectedExpiryDate,
                     onSave = { newItem ->
                         viewModel.addProduct(newItem)
-                        showBottomSheet = false
                         viewModel.clearScannedProduct()
-                        gs1ExpiryDate = null
                         scope.launch {
                             Toast.makeText(context, "✓ Product Added Successfully", Toast.LENGTH_SHORT).show()
                             delay(500)
@@ -190,52 +222,145 @@ fun ScannerScreen(
                         }
                     },
                     onCancel = { 
-                        showBottomSheet = false
-                        viewModel.clearScannedProduct()
-                        gs1ExpiryDate = null
+                        scanStep = ScanStep.WAITING_FOR_EXPIRY
+                        detectedExpiryDate = null
+                    },
+                    onRetake = {
+                        scanStep = ScanStep.WAITING_FOR_EXPIRY
+                        detectedExpiryDate = null
                     }
                 )
+            }
+        }
+
+        if (scanStep == ScanStep.EXPIRY_FAILED) {
+            ModalBottomSheet(
+                onDismissRequest = { scanStep = ScanStep.WAITING_FOR_EXPIRY }
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
+                    Text("Couldn't detect expiry date", style = MaterialTheme.typography.titleLarge)
+                    Text("Please try again or enter the date manually.", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    
+                    Button(
+                        onClick = { scanStep = ScanStep.WAITING_FOR_EXPIRY },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Retake")
+                    }
+                    
+                    OutlinedButton(
+                        onClick = { scanStep = ScanStep.CONFIRMATION },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.EditCalendar, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Enter Manually")
+                    }
+                }
             }
         }
     }
 }
 
-@ComposePreview(showBackground = true)
 @Composable
-fun ScannerScreenPreview() {
-    ExpiryTracker1Theme(darkTheme = false) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Gray)) {
-            ScannerOverlay(
-                onNavigateBack = {},
-                onManualClick = {},
-                onGalleryClick = {},
-                onFlashClick = {},
-                isFlashOn = false
+fun CropPreviewScreen(
+    bitmap: Bitmap,
+    onRetake: () -> Unit,
+    onContinue: (Bitmap) -> Unit
+) {
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    val state = rememberTransformableState { zoomChange, offsetChange, _ ->
+        scale *= zoomChange
+        offset += offsetChange
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().background(Color.Black),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds(),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .transformable(state = state)
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offset.x,
+                        translationY = offset.y
+                    ),
+                contentScale = ContentScale.Fit
             )
+            
+            // Fixed Crop Frame for reference
+            Box(
+                modifier = Modifier
+                    .size(width = 220.dp, height = 70.dp)
+                    .border(2.dp, Color.White, RoundedCornerShape(12.dp))
+            )
+        }
+
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                OutlinedButton(onClick = onRetake, modifier = Modifier.weight(1f)) {
+                    Text("Retake")
+                }
+                Spacer(Modifier.width(16.dp))
+                Button(
+                    onClick = { 
+                        // Simplified continue: just use current bitmap. 
+                        // In a full implementation, we'd apply transform to crop.
+                        onContinue(bitmap) 
+                    }, 
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Continue")
+                }
+            }
         }
     }
 }
 
-@ComposePreview(showBackground = true, uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
-@Composable
-fun ScannerScreenDarkPreview() {
-    ExpiryTracker1Theme(darkTheme = true) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.DarkGray)) {
-            ScannerOverlay(
-                onNavigateBack = {},
-                onManualClick = {},
-                onGalleryClick = {},
-                onFlashClick = {},
-                isFlashOn = true
-            )
-        }
+fun vibrate(context: Context) {
+    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+        vibratorManager.defaultVibrator
+    } else {
+        @Suppress("DEPRECATION")
+        context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+    }
+    
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        vibrator.vibrate(VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE))
+    } else {
+        @Suppress("DEPRECATION")
+        vibrator.vibrate(100)
     }
 }
 
 @Composable
 fun CameraPreview(
     modifier: Modifier = Modifier,
-    onBarcodeDetected: (String?, String?) -> Unit,
+    analyzer: BarcodeAnalyzer,
     onCameraControlReady: (CameraControl) -> Unit
 ) {
     val context = LocalContext.current
@@ -256,9 +381,7 @@ fun CameraPreview(
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
                     .also {
-                        it.setAnalyzer(executor, BarcodeAnalyzer { barcode, expiry ->
-                            onBarcodeDetected(barcode, expiry)
-                        })
+                        it.setAnalyzer(executor, analyzer)
                     }
 
                 val cameraSelector = CameraSelector.Builder()
@@ -286,122 +409,167 @@ fun CameraPreview(
 
 @Composable
 fun ScannerOverlay(
+    scanStep: ScanStep,
+    productName: String?,
     onNavigateBack: () -> Unit,
-    onManualClick: () -> Unit,
-    onGalleryClick: () -> Unit,
+    onCaptureExpiry: () -> Unit,
     onFlashClick: () -> Unit,
     isFlashOn: Boolean
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     
     Box(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 48.dp, start = 20.dp, end = 20.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = onNavigateBack,
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val canvasWidth = size.width
+            val canvasHeight = size.height
+            
+            drawRect(color = Color.Black.copy(alpha = if (scanStep == ScanStep.WAITING_FOR_BARCODE) 0.4f else 0.75f))
+            
+            val boxWidth = 220.dp.toPx()
+            val boxHeight = if (scanStep == ScanStep.WAITING_FOR_BARCODE) 220.dp.toPx() else 70.dp.toPx()
+            val left = (canvasWidth - boxWidth) / 2
+            val top = (canvasHeight - boxHeight) / 2
+            
+            drawRoundRect(
+                color = Color.Transparent,
+                topLeft = Offset(left, top),
+                size = Size(boxWidth, boxHeight),
+                cornerRadius = CornerRadius(16.dp.toPx()),
+                blendMode = BlendMode.Clear
+            )
+        }
+
+        val infiniteTransition = rememberInfiniteTransition(label = "border")
+        val alpha by infiniteTransition.animateFloat(
+            initialValue = 0.4f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "alpha"
+        )
+        
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            val boxWidth = 220.dp
+            val boxHeight = if (scanStep == ScanStep.WAITING_FOR_BARCODE) 220.dp else 70.dp
+            
+            Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.3f))
+                    .size(width = boxWidth, height = boxHeight)
+                    .border(
+                        width = 2.dp,
+                        color = if (scanStep == ScanStep.CONFIRMATION) Color(0xFF4CAF50) else primaryColor.copy(alpha = alpha),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+            )
+        }
+
+        IconButton(
+            onClick = onNavigateBack,
+            modifier = Modifier
+                .padding(top = 48.dp, start = 20.dp)
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.3f))
+        ) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+        }
+
+        AnimatedVisibility(
+            visible = scanStep != ScanStep.WAITING_FOR_BARCODE,
+            enter = slideInVertically { -it } + fadeIn(),
+            exit = slideOutVertically { -it } + fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 60.dp)
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.padding(horizontal = 24.dp).fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(32.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text("✓ Barcode Detected", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                        Text("Product: ${productName ?: "Loading..."}", style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                    }
+                }
             }
         }
 
-        Box(
+        Column(
             modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(
-                modifier = Modifier
-                    .size(width = 280.dp, height = 280.dp)
-                    .border(width = 1.dp, color = Color.White.copy(alpha = 0.3f), shape = RoundedCornerShape(24.dp))
-            ) {
-                val cornerSize = 40.dp
-                val thickness = 4.dp
-                Box(modifier = Modifier.size(cornerSize).align(Alignment.TopStart).border(thickness, primaryColor, RoundedCornerShape(topStart = 24.dp)))
-                Box(modifier = Modifier.size(cornerSize).align(Alignment.TopEnd).border(thickness, primaryColor, RoundedCornerShape(topEnd = 24.dp)))
-                Box(modifier = Modifier.size(cornerSize).align(Alignment.BottomStart).border(thickness, primaryColor, RoundedCornerShape(bottomStart = 24.dp)))
-                Box(modifier = Modifier.size(cornerSize).align(Alignment.BottomEnd).border(thickness, primaryColor, RoundedCornerShape(bottomEnd = 24.dp)))
-            }
+            Spacer(modifier = Modifier.weight(1f))
             
-            Surface(
-                modifier = Modifier.padding(top = 350.dp).clip(RoundedCornerShape(24.dp)),
-                color = Color.Black.copy(alpha = 0.5f)
-            ) {
+            if (scanStep == ScanStep.WAITING_FOR_EXPIRY) {
+                Text(
+                    text = "Move the expiry date inside the box.",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            } else if (scanStep == ScanStep.WAITING_FOR_BARCODE) {
                 Text(
                     text = "Align barcode within the frame",
                     color = Color.White,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
+            
+            Spacer(modifier = Modifier.height(if (scanStep == ScanStep.WAITING_FOR_BARCODE) 260.dp else 120.dp))
+            
+            if (scanStep == ScanStep.WAITING_FOR_EXPIRY) {
+                Text(
+                    text = "Examples:\n• EXP  • Expiry Date\n• Best Before  • Use By",
+                    color = Color.White.copy(alpha = 0.6f),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 18.sp
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                LargeFloatingActionButton(
+                    onClick = onCaptureExpiry,
+                    modifier = Modifier.padding(bottom = 32.dp),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = RoundedCornerShape(28.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = null)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Capture Expiry", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(60.dp))
         }
 
-        // Bottom Controls Container
-        Column(
+        IconButton(
+            onClick = onFlashClick,
             modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 60.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 60.dp, end = 40.dp)
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(if (isFlashOn) Color.White.copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.4f))
         ) {
-            // Gallery and Flash Buttons
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 40.dp, vertical = 20.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Gallery Button
-                IconButton(
-                    onClick = onGalleryClick,
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.4f))
-                ) {
-                    Icon(Icons.Default.PhotoLibrary, contentDescription = "Gallery", tint = Color.White)
-                }
-
-                // Flash Button
-                IconButton(
-                    onClick = onFlashClick,
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(if (isFlashOn) Color.White.copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.4f))
-                ) {
-                    Icon(
-                        if (isFlashOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
-                        contentDescription = "Flash",
-                        tint = if (isFlashOn) Color.Black else Color.White
-                    )
-                }
-            }
-
-            // Manual Entry Button
-            Surface(
-                onClick = { onManualClick() },
-                color = Color.Black.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(24.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(Icons.Default.EditNote, contentDescription = null, tint = Color.White)
-                    Text("Manual Entry", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            }
+            Icon(
+                if (isFlashOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                contentDescription = "Flash",
+                tint = if (isFlashOn) Color.Black else Color.White
+            )
         }
     }
 }
@@ -416,8 +584,10 @@ fun ProductEntryContent(
     category: String,
     preFillExpiry: String? = null,
     onSave: (PantryItem) -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onRetake: () -> Unit
 ) {
+    val context = LocalContext.current
     var name by remember { mutableStateOf(productName) }
     var itemBrand by remember { mutableStateOf(brand) }
     var itemCategory by remember { mutableStateOf(category) }
@@ -427,8 +597,8 @@ fun ProductEntryContent(
 
     val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
     
-    // Support multiple incoming formats from OCR/GS1
     val incomingDateFormats = listOf(
+        SimpleDateFormat("dd MMM yyyy", Locale.getDefault()),
         SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()),
         SimpleDateFormat("dd-MM-yyyy", Locale.getDefault()),
         SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()),
@@ -443,9 +613,7 @@ fun ProductEntryContent(
                 try {
                     parsedTime = format.parse(preFillExpiry)?.time
                     if (parsedTime != null) break
-                } catch (e: Exception) {
-                    // Continue to next format
-                }
+                } catch (e: Exception) { }
             }
         }
         mutableLongStateOf(parsedTime ?: (System.currentTimeMillis() + 86400000 * 7))
@@ -453,6 +621,23 @@ fun ProductEntryContent(
     
     var reminder by remember { mutableStateOf("1 Day Before") }
     var notes by remember { mutableStateOf("") }
+    var itemImageUrl by remember { mutableStateOf(imageUrl) }
+    var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var showPhotoOptions by remember { mutableStateOf(false) }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri ->
+            uri?.let { itemImageUrl = it.toString(); capturedBitmap = null }
+        }
+    )
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview(),
+        onResult = { bitmap ->
+            bitmap?.let { capturedBitmap = it; itemImageUrl = "" }
+        }
+    )
 
     val datePickerState = rememberDatePickerState()
     var showDatePickerFor by remember { mutableStateOf<String?>(null) }
@@ -464,28 +649,46 @@ fun ProductEntryContent(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("Product Details", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50))
+            Spacer(Modifier.width(8.dp))
+            Text("Barcode Scanned", style = MaterialTheme.typography.labelMedium, color = Color(0xFF4CAF50))
+            Spacer(Modifier.width(16.dp))
+            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50))
+            Spacer(Modifier.width(8.dp))
+            Text("Expiry Detected", style = MaterialTheme.typography.labelMedium, color = Color(0xFF4CAF50))
+        }
+
+        Text("Confirm Product Details", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (imageUrl.isNotBlank()) {
-                AsyncImage(
-                    model = imageUrl,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Inventory, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable { showPhotoOptions = true },
+                contentAlignment = Alignment.Center
+            ) {
+                if (capturedBitmap != null) {
+                    Image(
+                        bitmap = capturedBitmap!!.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else if (itemImageUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = itemImageUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.AddAPhoto, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Text("Photo", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary)
+                    }
                 }
             }
             Spacer(modifier = Modifier.width(16.dp))
@@ -499,12 +702,21 @@ fun ProductEntryContent(
             }
         }
 
-        OutlinedTextField(
-            value = itemBrand,
-            onValueChange = { itemBrand = it },
-            label = { Text("Brand") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = itemBrand,
+                onValueChange = { itemBrand = it },
+                label = { Text("Brand") },
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = barcode,
+                onValueChange = {},
+                label = { Text("Barcode") },
+                readOnly = true,
+                modifier = Modifier.weight(1f)
+            )
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
@@ -533,61 +745,58 @@ fun ProductEntryContent(
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
-                value = dateFormat.format(Date(purchaseDate)),
-                onValueChange = {},
-                label = { Text("Purchase Date") },
-                readOnly = true,
-                modifier = Modifier.weight(1f),
-                trailingIcon = { IconButton(onClick = { showDatePickerFor = "purchase" }) { Icon(Icons.Default.CalendarToday, null) } }
-            )
-            OutlinedTextField(
                 value = dateFormat.format(Date(expiryDate)),
                 onValueChange = {},
-                label = { Text("Expiry Date*") },
+                label = { Text("Detected Expiry*") },
                 readOnly = true,
                 modifier = Modifier.weight(1f),
-                trailingIcon = { IconButton(onClick = { showDatePickerFor = "expiry" }) { Icon(Icons.Default.CalendarToday, null) } }
+                trailingIcon = { IconButton(onClick = { showDatePickerFor = "expiry" }) { Icon(Icons.Default.EditCalendar, null) } }
             )
-        }
-
-        var showRemDropdown by remember { mutableStateOf(false) }
-        Box {
-            OutlinedTextField(
-                value = reminder,
-                onValueChange = {},
-                label = { Text("Reminder") },
-                readOnly = true,
-                trailingIcon = { IconButton(onClick = { showRemDropdown = true }) { Icon(Icons.Default.ArrowDropDown, null) } },
-                modifier = Modifier.fillMaxWidth()
-            )
-            DropdownMenu(expanded = showRemDropdown, onDismissRequest = { showRemDropdown = false }) {
-                listOf("On Expiry Day", "1 Day Before", "3 Days Before", "7 Days Before").forEach { r ->
-                    DropdownMenuItem(text = { Text(r) }, onClick = { reminder = r; showRemDropdown = false })
+            var showRemDropdown by remember { mutableStateOf(false) }
+            Box(modifier = Modifier.weight(1f)) {
+                OutlinedTextField(
+                    value = reminder,
+                    onValueChange = {},
+                    label = { Text("Reminder") },
+                    readOnly = true,
+                    trailingIcon = { IconButton(onClick = { showRemDropdown = true }) { Icon(Icons.Default.ArrowDropDown, null) } },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                DropdownMenu(expanded = showRemDropdown, onDismissRequest = { showRemDropdown = false }) {
+                    listOf("On Expiry Day", "1 Day Before", "3 Days Before", "7 Days Before").forEach { r ->
+                        DropdownMenuItem(text = { Text(r) }, onClick = { reminder = r; showRemDropdown = false })
+                    }
                 }
             }
         }
 
-        OutlinedTextField(
-            value = notes,
-            onValueChange = { notes = it },
-            label = { Text("Notes") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2
-        )
+        Spacer(modifier = Modifier.height(8.dp))
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = onCancel) { Text("Cancel") }
-            Spacer(modifier = Modifier.width(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(
+                onClick = onRetake,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Retake Photo")
+            }
             Button(
                 onClick = {
                     if (name.isNotBlank() && quantity.isNotBlank()) {
+                        val diff = expiryDate - System.currentTimeMillis()
+                        val daysLeft = (diff / (1000 * 60 * 60 * 24)).toInt().coerceAtLeast(0)
+                        
+                        var finalImageUrl = itemImageUrl
+                        if (capturedBitmap != null) {
+                            finalImageUrl = saveBitmapToLocalFile(context, capturedBitmap!!) ?: ""
+                        }
+
                         onSave(PantryItem(
                             name = name,
                             brand = itemBrand,
                             category = itemCategory,
                             quantity = "$quantity $unit",
                             barcode = barcode,
-                            imageUrl = imageUrl,
+                            imageUrl = finalImageUrl,
                             purchaseDate = dateFormat.format(Date(purchaseDate)),
                             expiryDate = dateFormat.format(Date(expiryDate)),
                             expiryTimestamp = expiryDate,
@@ -596,9 +805,36 @@ fun ProductEntryContent(
                         ))
                     }
                 },
-                enabled = name.isNotBlank() && quantity.isNotBlank()
+                enabled = name.isNotBlank() && quantity.isNotBlank(),
+                modifier = Modifier.weight(1f)
             ) {
-                Text("Save Product")
+                Text("Confirm & Save")
+            }
+        }
+        
+        TextButton(
+            onClick = onCancel,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        ) {
+            Text("Cancel")
+        }
+    }
+
+    if (showPhotoOptions) {
+        ModalBottomSheet(onDismissRequest = { showPhotoOptions = false }) {
+            Column(modifier = Modifier.fillMaxWidth().padding(24.dp)) {
+                Text("Select Photo", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(16.dp))
+                ListItem(
+                    headlineContent = { Text("Click Photo") },
+                    leadingContent = { Icon(Icons.Default.CameraAlt, null) },
+                    modifier = Modifier.clickable { cameraLauncher.launch(null); showPhotoOptions = false }
+                )
+                ListItem(
+                    headlineContent = { Text("Choose from Gallery") },
+                    leadingContent = { Icon(Icons.Default.PhotoLibrary, null) },
+                    modifier = Modifier.clickable { galleryLauncher.launch("image/*"); showPhotoOptions = false }
+                )
             }
         }
     }
@@ -609,8 +845,7 @@ fun ProductEntryContent(
             confirmButton = {
                 TextButton(onClick = {
                     datePickerState.selectedDateMillis?.let {
-                        if (showDatePickerFor == "purchase") purchaseDate = it
-                        else expiryDate = it
+                        expiryDate = it
                     }
                     showDatePickerFor = null
                 }) { Text("OK") }
@@ -618,6 +853,38 @@ fun ProductEntryContent(
             dismissButton = { TextButton(onClick = { showDatePickerFor = null }) { Text("Cancel") } }
         ) {
             DatePicker(state = datePickerState)
+        }
+    }
+}
+
+private fun saveBitmapToLocalFile(context: Context, bitmap: Bitmap): String? {
+    return try {
+        val filename = "product_${System.currentTimeMillis()}.jpg"
+        val file = File(context.filesDir, filename)
+        val out = FileOutputStream(file)
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        out.flush()
+        out.close()
+        file.absolutePath
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
+}
+
+@ComposePreview(showBackground = true)
+@Composable
+fun ScannerScreenPreview() {
+    ExpiryTracker1Theme(darkTheme = false) {
+        Box(modifier = Modifier.fillMaxSize().background(Color.Gray)) {
+            ScannerOverlay(
+                scanStep = ScanStep.WAITING_FOR_BARCODE,
+                productName = null,
+                onNavigateBack = {},
+                onCaptureExpiry = {},
+                onFlashClick = {},
+                isFlashOn = false
+            )
         }
     }
 }
