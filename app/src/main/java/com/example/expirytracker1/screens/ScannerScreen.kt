@@ -4,10 +4,12 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,6 +41,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -48,6 +51,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview as ComposePreview
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -58,6 +62,7 @@ import com.example.expirytracker1.data.PantryItem
 import com.example.expirytracker1.scanner.BarcodeAnalyzer
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.viewmodel.ProductViewModel
+import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -96,21 +101,64 @@ fun ScannerScreen(
     val analyzer = remember { 
         BarcodeAnalyzer { barcode, _ ->
             if (scanStep == ScanStep.WAITING_FOR_BARCODE && barcode != null) {
+                Log.d("ScannerScreen", "Barcode detected in UI: $barcode")
                 viewModel.scanBarcode(barcode)
             }
         }
     }
 
     LaunchedEffect(scanStep) {
+        Log.d("ScannerScreen", "Scan Step changed to: $scanStep")
         analyzer.isBarcodeScanningEnabled = (scanStep == ScanStep.WAITING_FOR_BARCODE)
     }
 
     LaunchedEffect(scannedProduct) {
         if (scannedProduct != null && scanStep == ScanStep.WAITING_FOR_BARCODE) {
+            Log.d("ScannerScreen", "Product found: ${scannedProduct?.product_name}. Moving to expiry scan.")
             vibrate(context)
             scanStep = ScanStep.WAITING_FOR_EXPIRY
         }
     }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri ->
+            uri?.let {
+                scope.launch {
+                    try {
+                        isProcessingOcr = true
+                        val inputImage = InputImage.fromFilePath(context, it)
+                        
+                        // First try barcode
+                        val barcodeScanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient()
+                        val barcodes = com.google.android.gms.tasks.Tasks.await(barcodeScanner.process(inputImage))
+                        
+                        if (barcodes.isNotEmpty()) {
+                            val barcode = barcodes[0].rawValue
+                            if (barcode != null) {
+                                viewModel.scanBarcode(barcode)
+                                // The scannedProduct collector will move it to WAITING_FOR_EXPIRY
+                            }
+                        } else {
+                            // If no barcode, try OCR directly
+                            analyzer.analyzeImage(inputImage) { result: String? ->
+                                isProcessingOcr = false
+                                if (result != null) {
+                                    detectedExpiryDate = result
+                                    scanStep = ScanStep.CONFIRMATION
+                                } else {
+                                    scanStep = ScanStep.EXPIRY_FAILED
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ScannerScreen", "Gallery processing failed", e)
+                        isProcessingOcr = false
+                    }
+                }
+            }
+        }
+    )
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -150,7 +198,15 @@ fun ScannerScreen(
             ScannerOverlay(
                 scanStep = scanStep,
                 productName = scannedProduct?.product_name,
-                onNavigateBack = onNavigateBack,
+                onNavigateBack = {
+                    if (scanStep == ScanStep.WAITING_FOR_EXPIRY || scanStep == ScanStep.EXPIRY_FAILED) {
+                        scanStep = ScanStep.WAITING_FOR_BARCODE
+                        viewModel.clearScannedProduct()
+                    } else {
+                        viewModel.clearScannedProduct()
+                        onNavigateBack()
+                    }
+                },
                 onCaptureExpiry = {
                     analyzer.onImageCaptured = { bitmap ->
                         capturedBitmap = bitmap
@@ -162,6 +218,9 @@ fun ScannerScreen(
                     isFlashOn = !isFlashOn
                     cameraControl?.enableTorch(isFlashOn)
                 },
+                onGalleryClick = {
+                    galleryLauncher.launch("image/*")
+                },
                 isFlashOn = isFlashOn
             )
         }
@@ -171,6 +230,7 @@ fun ScannerScreen(
                 bitmap = capturedBitmap!!,
                 onRetake = { 
                     scanStep = ScanStep.WAITING_FOR_EXPIRY 
+                    capturedBitmap = null
                 },
                 onContinue = { adjustedBitmap ->
                     isProcessingOcr = true
@@ -188,7 +248,7 @@ fun ScannerScreen(
             )
         }
 
-        if (isScanning || isProcessingOcr) {
+        if ((isScanning && scanStep == ScanStep.WAITING_FOR_BARCODE) || isProcessingOcr) {
             Box(
                 modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)),
                 contentAlignment = Alignment.Center
@@ -275,7 +335,7 @@ fun CropPreviewScreen(
     onRetake: () -> Unit,
     onContinue: (Bitmap) -> Unit
 ) {
-    var scale by remember { mutableStateOf(1f) }
+    var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     val state = rememberTransformableState { zoomChange, offsetChange, _ ->
         scale *= zoomChange
@@ -308,14 +368,22 @@ fun CropPreviewScreen(
             // Fixed Crop Frame for reference
             Box(
                 modifier = Modifier
-                    .size(width = 220.dp, height = 70.dp)
-                    .border(2.dp, Color.White, RoundedCornerShape(12.dp))
+                    .size(width = 240.dp, height = 80.dp)
+                    .border(2.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
+            )
+            
+            Text(
+                "Adjust text to fit in the box",
+                color = Color.White,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp),
+                style = MaterialTheme.typography.bodyMedium
             )
         }
 
         Surface(
             color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            tonalElevation = 8.dp
         ) {
             Row(
                 modifier = Modifier.padding(24.dp).fillMaxWidth(),
@@ -326,11 +394,7 @@ fun CropPreviewScreen(
                 }
                 Spacer(Modifier.width(16.dp))
                 Button(
-                    onClick = { 
-                        // Simplified continue: just use current bitmap. 
-                        // In a full implementation, we'd apply transform to crop.
-                        onContinue(bitmap) 
-                    }, 
+                    onClick = { onContinue(bitmap) },
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Continue")
@@ -414,6 +478,7 @@ fun ScannerOverlay(
     onNavigateBack: () -> Unit,
     onCaptureExpiry: () -> Unit,
     onFlashClick: () -> Unit,
+    onGalleryClick: () -> Unit,
     isFlashOn: Boolean
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -556,20 +621,39 @@ fun ScannerOverlay(
             Spacer(modifier = Modifier.height(60.dp))
         }
 
-        IconButton(
-            onClick = onFlashClick,
+        Row(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(bottom = 60.dp, end = 40.dp)
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(if (isFlashOn) Color.White.copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.4f))
+                .padding(bottom = 60.dp, end = 20.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                if (isFlashOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
-                contentDescription = "Flash",
-                tint = if (isFlashOn) Color.Black else Color.White
-            )
+            // Gallery Button
+            IconButton(
+                onClick = onGalleryClick,
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.4f))
+            ) {
+                Icon(Icons.Default.PhotoLibrary, contentDescription = "Gallery", tint = Color.White)
+            }
+            
+            Spacer(modifier = Modifier.width(16.dp))
+
+            // Flash Button
+            IconButton(
+                onClick = onFlashClick,
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(if (isFlashOn) Color.White.copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.4f))
+            ) {
+                Icon(
+                    if (isFlashOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                    contentDescription = "Flash",
+                    tint = if (isFlashOn) Color.Black else Color.White
+                )
+            }
         }
     }
 }
@@ -883,6 +967,7 @@ fun ScannerScreenPreview() {
                 onNavigateBack = {},
                 onCaptureExpiry = {},
                 onFlashClick = {},
+                onGalleryClick = {},
                 isFlashOn = false
             )
         }

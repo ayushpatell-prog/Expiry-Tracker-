@@ -2,6 +2,7 @@ package com.example.expirytracker1.scanner
 
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
@@ -26,6 +27,9 @@ class BarcodeAnalyzer(
     var onImageCaptured: ((Bitmap) -> Unit)? = null
     var onOcrResult: ((String?) -> Unit)? = null
 
+    private var lastBarcode: String? = null
+    private var lastBarcodeTime = 0L
+
     private val barcodeScanner = BarcodeScanning.getClient(
         BarcodeScannerOptions.Builder()
             .setBarcodeFormats(
@@ -37,14 +41,16 @@ class BarcodeAnalyzer(
     )
     private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
+    // Improved date pattern to be more flexible
     private val datePattern = Pattern.compile(
-        "\\b(\\d{1,2})[./-](\\d{1,2})[./-](\\d{2,4})\\b|" +
-        "\\b(\\d{4})[./-](\\d{1,2})[./-](\\d{1,2})\\b|" +
-        "\\b(\\d{1,2})\\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\\s+(\\d{2,4})\\b",
+        "(?i)\\b(?:exp|expiry|best before|best by|use by|bb)?[:\\s]*" +
+        "(\\d{1,4})[./-](\\d{1,2})[./-](\\d{1,4})\\b|" +
+        "\\b(\\d{1,2})\\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*[\\s,]*(\\d{2,4})\\b|" +
+        "\\b(\\d{4})[./-](\\d{1,2})[./-](\\d{1,2})\\b",
         Pattern.CASE_INSENSITIVE
     )
 
-    private val expiryKeywords = listOf("EXP", "EXPIRY", "BEST BEFORE", "BEST BY", "USE BY", "CONSUME BEFORE", "EXPIRES")
+    private val expiryKeywords = listOf("EXP", "EXPIRY", "BEST BEFORE", "BEST BY", "USE BY", "CONSUME BEFORE", "EXPIRES", "BB")
     private val mfgKeywords = listOf("PKD", "PACKED", "PACK DATE", "MFD", "MFG", "MANUFACTURED", "PRODUCTION", "MANUFACTURING", "BATCH", "MRP")
 
     @OptIn(ExperimentalGetImage::class)
@@ -57,9 +63,16 @@ class BarcodeAnalyzer(
                 val image = InputImage.fromMediaImage(mediaImage, rotationDegrees)
                 barcodeScanner.process(image)
                     .addOnSuccessListener { barcodes ->
-                        for (barcode in barcodes) {
+                        if (barcodes.isNotEmpty()) {
+                            val barcode = barcodes[0]
                             barcode.rawValue?.let { value ->
-                                onDetected(value, null)
+                                val currentTime = System.currentTimeMillis()
+                                if (value != lastBarcode || currentTime - lastBarcodeTime > 2000) {
+                                    lastBarcode = value
+                                    lastBarcodeTime = currentTime
+                                    Log.d("BarcodeAnalyzer", "Barcode detected: $value")
+                                    onDetected(value, null)
+                                }
                             }
                         }
                     }
@@ -69,6 +82,7 @@ class BarcodeAnalyzer(
             }
         } else if (isCaptureRequested) {
             isCaptureRequested = false
+            Log.d("BarcodeAnalyzer", "Capture requested. Rotation: $rotationDegrees")
             
             // Get bitmap from ImageProxy
             val bitmap = imageProxy.toBitmap()
@@ -77,18 +91,21 @@ class BarcodeAnalyzer(
             val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
             val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
             
-            // User wants to freeze the frame and then crop. 
-            // Step 4: Crop ONLY the transparent rectangle automatically.
-            // ROI Crop - Centered slot (matches the 220x70dp UI box approximately)
-            val cropWidth = (rotatedBitmap.width * 0.6).toInt()
-            val cropHeight = (rotatedBitmap.height * 0.15).toInt()
-            val left = (rotatedBitmap.width - cropWidth) / 2
-            val top = (rotatedBitmap.height - cropHeight) / 2
+            // ROI Crop - Exact match for the 220x70dp window
+            val frameWidth = rotatedBitmap.width
+            val frameHeight = rotatedBitmap.height
+            
+            val cropWidth = (frameWidth * 0.7).toInt().coerceAtMost(frameWidth)
+            val cropHeight = (frameHeight * 0.2).toInt().coerceAtMost(frameHeight)
+            val left = (frameWidth - cropWidth) / 2
+            val top = (frameHeight - cropHeight) / 2
             
             try {
                 val croppedBitmap = Bitmap.createBitmap(rotatedBitmap, left, top, cropWidth, cropHeight)
+                Log.d("BarcodeAnalyzer", "Image cropped successfully. Size: ${croppedBitmap.width}x${croppedBitmap.height}")
                 onImageCaptured?.invoke(croppedBitmap)
             } catch (e: Exception) {
+                Log.e("BarcodeAnalyzer", "Crop failed: ${e.message}")
                 onImageCaptured?.invoke(rotatedBitmap)
             } finally {
                 imageProxy.close()
@@ -99,12 +116,17 @@ class BarcodeAnalyzer(
     }
 
     fun performOcrOnBitmap(bitmap: Bitmap, onComplete: (String?) -> Unit) {
+        Log.d("BarcodeAnalyzer", "Performing OCR on bitmap...")
         val image = InputImage.fromBitmap(bitmap, 0)
         textRecognizer.process(image)
             .addOnSuccessListener { visionText ->
-                onComplete(processOcrText(visionText.text))
+                Log.d("BarcodeAnalyzer", "OCR Result text: ${visionText.text}")
+                val detectedDate = processOcrText(visionText.text)
+                Log.d("BarcodeAnalyzer", "Detected Date: $detectedDate")
+                onComplete(detectedDate)
             }
-            .addOnFailureListener {
+            .addOnFailureListener { e ->
+                Log.e("BarcodeAnalyzer", "OCR failed: ${e.message}")
                 onComplete(null)
             }
     }
@@ -117,9 +139,10 @@ class BarcodeAnalyzer(
             val cleanLine = line.uppercase().trim()
             val matcher = datePattern.matcher(cleanLine)
             while (matcher.find()) {
-                val dateStr = matcher.group()
+                val dateStr = matcher.group().trim()
                 var score = 10 // Base score
 
+                // Check for keywords in the same line
                 if (expiryKeywords.any { cleanLine.contains(it) }) {
                     score += 100
                 }
@@ -128,7 +151,18 @@ class BarcodeAnalyzer(
                     score -= 500
                 }
 
-                candidates.add(normalizeAndFormatDate(dateStr) to score)
+                val normalized = normalizeAndFormatDate(dateStr)
+                if (normalized != dateStr || dateStr.length >= 6) {
+                    candidates.add(normalized to score)
+                }
+            }
+        }
+
+        // Also search in the full text if no candidates found in lines
+        if (candidates.isEmpty()) {
+            val matcher = datePattern.matcher(fullText.uppercase())
+            while (matcher.find()) {
+                candidates.add(normalizeAndFormatDate(matcher.group().trim()) to 5)
             }
         }
 
@@ -136,6 +170,12 @@ class BarcodeAnalyzer(
     }
 
     private fun normalizeAndFormatDate(dateStr: String): String {
+        // Strip out keywords from the string itself
+        var cleanDate = dateStr.uppercase()
+        expiryKeywords.forEach { cleanDate = cleanDate.replace(it, "") }
+        cleanDate = cleanDate.replace(":", "").replace(" ", "").trim()
+
+        // Handle DD MMM YYYY
         if (dateStr.any { it.isLetter() }) {
             try {
                 val sdfInput = java.text.SimpleDateFormat("dd MMM yyyy", Locale.US)
@@ -146,19 +186,24 @@ class BarcodeAnalyzer(
             } catch (e: Exception) {}
         }
 
-        val match = Regex("(\\d{1,2}|\\d{4})([./-])(\\d{1,2})([./-])(\\d{2,4})").find(dateStr)
+        // Try to find digits and separators
+        val match = Regex("(\\d{1,4})[./-](\\d{1,2})[./-](\\d{1,4})").find(cleanDate)
         if (match != null) {
             val groups = match.groupValues
-            var day = groups[1]
-            var month = groups[3]
-            var year = groups[5]
+            var day = ""
+            var month = ""
+            var year = ""
 
             if (groups[1].length == 4) {
+                // YYYY-MM-DD
                 year = groups[1]
-                month = groups[3]
-                day = groups[5]
+                month = groups[2]
+                day = groups[3]
             } else {
-                year = if (groups[5].length == 2) "20${groups[5]}" else groups[5]
+                // DD/MM/YYYY or DD/MM/YY
+                day = groups[1]
+                month = groups[2]
+                year = if (groups[3].length == 2) "20${groups[3]}" else groups[3]
             }
 
             try {
@@ -169,15 +214,16 @@ class BarcodeAnalyzer(
                 }
             } catch (e: Exception) {}
         }
+        
         return dateStr
     }
 
-    fun analyzeImage(image: InputImage, onComplete: () -> Unit = {}) {
+    fun analyzeImage(image: InputImage, onComplete: (String?) -> Unit) {
         textRecognizer.process(image)
             .addOnSuccessListener { visionText ->
                 val detectedDate = processOcrText(visionText.text)
-                onOcrResult?.invoke(detectedDate)
+                onComplete(detectedDate)
             }
-            .addOnCompleteListener { onComplete() }
+            .addOnFailureListener { onComplete(null) }
     }
 }
