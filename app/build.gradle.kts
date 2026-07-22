@@ -45,6 +45,26 @@ android {
         compose = true
         buildConfig = true
     }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/DEPENDENCIES"
+            excludes += "/META-INF/INDEX.LIST"
+        }
+    }
+
+    configurations.all {
+        resolutionStrategy {
+            force("io.grpc:grpc-api:1.62.2")
+            force("io.grpc:grpc-core:1.62.2")
+            force("io.grpc:grpc-okhttp:1.62.2")
+            force("io.grpc:grpc-protobuf-lite:1.62.2")
+            force("io.grpc:grpc-stub:1.62.2")
+            force("io.grpc:grpc-android:1.62.2")
+            force("io.grpc:grpc-context:1.62.2")
+        }
+    }
 }
 
 dependencies {
@@ -82,5 +102,7 @@ dependencies {
     implementation("com.google.firebase:firebase-storage")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("com.github.yalantis:ucrop:2.2.10")
-    implementation(libs.google.genai)
+    implementation(libs.google.genai) {
+        exclude(group = "com.google.protobuf", module = "protobuf-java")
+    }
 }

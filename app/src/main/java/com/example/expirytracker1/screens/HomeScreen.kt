@@ -53,7 +53,7 @@ fun HomeScreen(
     // --- State Management ---
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    
+
     // Use the shared list from ViewModel
     val itemsState = viewModel.products
 
