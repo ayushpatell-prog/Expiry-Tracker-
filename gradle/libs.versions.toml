@@ -15,6 +15,7 @@ textRecognition = "16.0.1"
 retrofit = "2.11.0"
 coil = "2.7.0"
 firestore = "25.1.2"
+genai = "1.58.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -44,6 +45,7 @@ retrofit-gson = { group = "com.squareup.retrofit2", name = "converter-gson", ver
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 firebase-firestore-ktx = { group = "com.google.firebase", name = "firebase-firestore-ktx", version.ref = "firestore" }
 kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version = "1.10.1" }
+google-genai = { group = "com.google.genai", name = "google-genai", version.ref = "genai" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
