@@ -68,4 +68,5 @@ dependencies {
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-storage")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+    implementation("com.github.yalantis:ucrop:2.2.10")
 }
