@@ -3,7 +3,6 @@ package com.example.expirytracker1.screens
 
 import android.content.res.Configuration
 import androidx.compose.animation.*
-import com.example.expirytracker1.network.GeminiService
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -48,9 +47,6 @@ fun InventoryScreen(
     // --- State Management ---
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All") }
-    var showAiDialog by remember { mutableStateOf(false) }
-    var aiResponse by remember { mutableStateOf("") }
-    var isAiLoading by remember { mutableStateOf(false) }
     
     // Use shared list from ViewModel
     val allItems = viewModel.products
@@ -206,32 +202,7 @@ fun InventoryScreen(
                                 onEdit = { itemToEdit = item },
                                 onSetReminder = { selectedItemForReminder = item },
                                 onGetAiSuggestions = {
-
-                                    showAiDialog = true
-                                    isAiLoading = true
-                                    aiResponse = ""
-
-                                    scope.launch {
-
-                                        val prompt = """
-            Product Name: ${item.name}
-            Brand: ${item.brand}
-            Category: ${item.category}
-            Quantity: ${item.quantity}
-            Expiry Date: ${item.expiryDate}
-
-            Suggest:
-            1. Best recipes using this product.
-            2. Whether it should be consumed soon.
-            3. Any storage tips.
-
-            Keep the answer under 120 words.
-        """.trimIndent()
-
-                                        aiResponse = GeminiService.askGemini(prompt)
-
-                                        isAiLoading = false
-                                    }
+                                    onNavigate("ASSISTANT?name=${item.name}&brand=${item.brand}&category=${item.category}&quantity=${item.quantity}&expiry=${item.expiryDate}&image=${item.imageUrl}")
                                 },
                                 onDelete = {
                                     // Remove from shared ViewModel
@@ -307,48 +278,6 @@ fun InventoryScreen(
         }
 
         // --- Bottom Sheet Logic ---
-        if (showAiDialog) {
-            AlertDialog(
-                onDismissRequest = { showAiDialog = false },
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("AI Recipe Suggestions")
-                    }
-                },
-                text = {
-                    if (isAiLoading) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            CircularProgressIndicator()
-                            Spacer(Modifier.height(16.dp))
-                            Text("Generating suggestions...")
-                        }
-
-                    } else {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 350.dp)
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            Text(aiResponse)
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = { showAiDialog = false }
-                    ) {
-                        Text("Close")
-                    }
-                }
-            )
-        }
-
         if (showFilterSheet) {
             FilterSortBottomSheet(
                 sheetState = sheetState,
