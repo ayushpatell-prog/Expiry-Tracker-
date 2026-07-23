@@ -30,10 +30,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 import com.example.expirytracker1.data.PantryItem
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.TextGray
 import com.example.expirytracker1.viewmodel.ProductViewModel
+import com.example.expirytracker1.viewmodel.AssistantViewModel
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -42,12 +44,34 @@ import java.util.*
 @Composable
 fun InventoryScreen(
     viewModel: ProductViewModel = viewModel(),
+    assistantViewModel: AssistantViewModel = viewModel(),
     onNavigate: (String) -> Unit = {}
 ) {
     // --- State Management ---
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All") }
     
+    // Use shared list from ViewModel
+    val allItems by viewModel.products.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    val error by viewModel.error.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Assistant States
+    val aiRecipe by assistantViewModel.recipe.collectAsState()
+    val isAiLoading by assistantViewModel.isLoading.collectAsState()
+    val aiError by assistantViewModel.error.collectAsState()
+    var showAiSheet by remember { mutableStateOf(false) }
+    var aiTargetItem by remember { mutableStateOf<PantryItem?>(null) }
+
+    LaunchedEffect(error) {
+        error?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.clearError()
+        }
+    }
+
     // Filter & Sort States
     var showFilterSheet by remember { mutableStateOf(false) }
     var selectedItemForDetails by remember { mutableStateOf<PantryItem?>(null) }
@@ -57,19 +81,6 @@ fun InventoryScreen(
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    val error by viewModel.error.collectAsState()
-    val context = androidx.compose.ui.platform.LocalContext.current
-    
-    // Use shared list from ViewModel
-    val allItems by viewModel.products.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-
-    LaunchedEffect(error) {
-        error?.let {
-            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
-            viewModel.clearError()
-        }
-    }
 
     // Applied states
     var appliedSortBy by remember { mutableStateOf("Expiry Date (Nearest First)") }
@@ -214,7 +225,9 @@ fun InventoryScreen(
                                 onEdit = { itemToEdit = item },
                                 onSetReminder = { selectedItemForReminder = item },
                                 onGetAiSuggestions = {
-                                    onNavigate("ASSISTANT?name=${item.name}&brand=${item.brand}&category=${item.category}&quantity=${item.quantity}&expiry=${item.expiryDate}&image=${item.imageUrl}")
+                                    aiTargetItem = item
+                                    showAiSheet = true
+                                    assistantViewModel.getRecipeSuggestions(item.name, item.category)
                                 },
                                 onDelete = {
                                     // Remove from shared ViewModel
@@ -285,6 +298,24 @@ fun InventoryScreen(
                         scope.launch { snackbarHostState.showSnackbar("Reminder updated") }
                     },
                     onCancel = { selectedItemForReminder = null }
+                )
+            }
+        }
+
+        if (showAiSheet && aiTargetItem != null) {
+            ModalBottomSheet(
+                onDismissRequest = { 
+                    showAiSheet = false
+                    aiTargetItem = null
+                },
+                modifier = Modifier.fillMaxHeight(0.8f)
+            ) {
+                AiAssistantSheetContent(
+                    productName = aiTargetItem!!.name,
+                    recipe = aiRecipe,
+                    isLoading = isAiLoading,
+                    error = aiError,
+                    onRetry = { assistantViewModel.getRecipeSuggestions(aiTargetItem!!.name, aiTargetItem!!.category) }
                 )
             }
         }
@@ -365,10 +396,10 @@ fun PantryItemCard(
 
     Card(
         modifier = Modifier.fillMaxWidth().animateContentSize(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
     ) {
         Column {
             Row(
@@ -377,10 +408,19 @@ fun PantryItemCard(
             ) {
                 // Product Icon
                 Box(
-                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier.size(64.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(item.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                    if (item.imageUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = item.imageUrl,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    } else {
+                        Icon(item.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                    }
                 }
                 
                 Spacer(modifier = Modifier.width(16.dp))
@@ -389,15 +429,15 @@ fun PantryItemCard(
                     // Status Badge
                     Surface(
                         color = item.statusColor.copy(alpha = 0.1f),
-                        shape = RoundedCornerShape(4.dp)
+                        shape = RoundedCornerShape(6.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
-                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(item.statusColor))
-                            Spacer(Modifier.width(4.dp))
-                            Text(text = statusLabel, color = item.statusColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(item.statusColor))
+                            Spacer(Modifier.width(6.dp))
+                            Text(text = if (item.daysLeft == 0) "Expires Today" else "$statusLabel (${item.daysLeft}d)", color = item.statusColor, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
                         }
                     }
                     
@@ -409,9 +449,9 @@ fun PantryItemCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "Qty: ${item.quantity}", color = TextGray, fontSize = 14.sp)
+                        Text(text = item.quantity, color = TextGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         Text(text = "  •  ", color = TextGray)
-                        Text(text = "Exp: ${item.expiryDate}", color = Color(0xFFD32F2F), fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text(text = "Exp: ${item.expiryDate}", color = item.statusColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -461,17 +501,25 @@ fun PantryItemCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
-                    .padding(top = 16.dp, bottom = 8.dp)
+                    .padding(top = 8.dp, bottom = 12.dp),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = "AI Assistant")
+                Icon(Icons.Default.AutoAwesome, contentDescription = "AI Assistant", modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("✨ Get AI Recipe Suggestions")
+                Text("✨ Get AI Recipe Suggestions", style = MaterialTheme.typography.labelMedium)
             }
 
             // Expiry Line
-            Box(modifier = Modifier.fillMaxWidth().height(3.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))) {
+            val progress = remember(item.daysLeft) {
+                when {
+                    item.daysLeft <= 0 -> 1f
+                    item.daysLeft >= 30 -> 0.1f
+                    else -> 1f - (item.daysLeft.toFloat() / 30f)
+                }
+            }
+            Box(modifier = Modifier.fillMaxWidth().height(4.dp).background(MaterialTheme.colorScheme.outline.copy(alpha = 0.05f))) {
                 Box(
-                    modifier = Modifier.fillMaxWidth(if (statusLabel == "Fresh") 0.3f else 1f).fillMaxHeight().background(item.statusColor)
+                    modifier = Modifier.fillMaxWidth(progress).fillMaxHeight().background(item.statusColor)
                 )
             }
         }
@@ -491,6 +539,90 @@ fun PantryItemCard(
                 TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
             }
         )
+    }
+}
+
+@Composable
+fun AiAssistantSheetContent(
+    productName: String,
+    recipe: String?,
+    isLoading: Boolean,
+    error: String?,
+    onRetry: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.AutoAwesome,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                "Gemini AI Assistant",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        
+        Spacer(Modifier.height(16.dp))
+        
+        Text(
+            "Generating recipes for: $productName",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.align(Alignment.Start)
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        if (isLoading) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(vertical = 32.dp)
+            ) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(16.dp))
+                Text("Thinking of something delicious...", style = MaterialTheme.typography.bodyMedium)
+            }
+        } else if (error != null) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(error, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = onRetry) {
+                    Text("Try Again")
+                }
+            }
+        } else {
+            recipe?.let {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Text(
+                        text = it,
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyLarge,
+                        lineHeight = 24.sp
+                    )
+                }
+            }
+        }
+        
+        Spacer(Modifier.height(32.dp))
     }
 }
 
