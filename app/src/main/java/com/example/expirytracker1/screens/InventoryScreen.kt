@@ -201,6 +201,9 @@ fun InventoryScreen(
                                 onViewDetails = { selectedItemForDetails = item },
                                 onEdit = { itemToEdit = item },
                                 onSetReminder = { selectedItemForReminder = item },
+                                onGetAiSuggestions = {
+                                    onNavigate("ASSISTANT?name=${item.name}&brand=${item.brand}&category=${item.category}&quantity=${item.quantity}&expiry=${item.expiryDate}&image=${item.imageUrl}")
+                                },
                                 onDelete = {
                                     // Remove from shared ViewModel
                                     viewModel.deleteProduct(item)
@@ -342,6 +345,7 @@ fun PantryItemCard(
     onViewDetails: () -> Unit,
     onEdit: () -> Unit,
     onSetReminder: () -> Unit,
+    onGetAiSuggestions: () -> Unit,
     onDelete: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -439,20 +443,17 @@ fun PantryItemCard(
                 }
             }
 
-            // AI Suggestion Button - Only for Non-Fresh items
-            AnimatedVisibility(
-                visible = statusLabel != "Fresh",
-                enter = expandVertically() + fadeIn(),
-                exit = shrinkVertically() + fadeOut()
+            // AI Recipe Suggestion Button - Visible for all items
+            FilledTonalButton(
+                onClick = onGetAiSuggestions,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 16.dp, bottom = 8.dp)
             ) {
-                FilledTonalButton(
-                    onClick = { },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = "AI Assistant")
-                    Spacer(Modifier.width(8.dp))
-                    Text("Get AI Recipe Suggestions")
-                }
+                Icon(Icons.Default.AutoAwesome, contentDescription = "AI Assistant")
+                Spacer(Modifier.width(8.dp))
+                Text("✨ Get AI Recipe Suggestions")
             }
 
             // Expiry Line
