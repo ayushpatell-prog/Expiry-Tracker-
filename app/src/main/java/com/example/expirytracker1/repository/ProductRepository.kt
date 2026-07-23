@@ -4,12 +4,27 @@ import com.example.expirytracker1.api.OpenFoodFactsApi
 import com.example.expirytracker1.data.PantryItem
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreSettings
+import com.google.firebase.firestore.PersistentCacheSettings
+import com.google.firebase.firestore.snapshots
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
 class ProductRepository {
-    private val firestore = FirebaseFirestore.getInstance()
+    private val firestore = FirebaseFirestore.getInstance().apply {
+        try {
+            val settings = FirebaseFirestoreSettings.Builder()
+                .setLocalCacheSettings(PersistentCacheSettings.newBuilder().build())
+                .build()
+            this.firestoreSettings = settings
+        } catch (e: Exception) {
+            android.util.Log.e("ProductRepository", "Error setting Firestore settings", e)
+        }
+    }
     private val auth = FirebaseAuth.getInstance()
     
     private val api = Retrofit.Builder()
@@ -30,26 +45,19 @@ class ProductRepository {
     }
 
     suspend fun saveProduct(item: PantryItem) {
-        getItemsCollection()?.document(item.id)?.set(item)?.await()
+        val collection = getItemsCollection() ?: throw Exception("User not logged in")
+        collection.document(item.id).set(item).await()
     }
 
     suspend fun deleteProduct(id: String) {
-        getItemsCollection()?.document(id)?.delete()?.await()
+        val collection = getItemsCollection() ?: throw Exception("User not logged in")
+        collection.document(id).delete().await()
     }
 
-    fun getItems(onUpdate: (List<PantryItem>) -> Unit) {
-        val collection = getItemsCollection()
-        if (collection == null) {
-            onUpdate(emptyList())
-            return
-        }
-        collection.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                android.util.Log.e("FIRESTORE", "Listen failed", error)
-                return@addSnapshotListener
-            }
-            val items = snapshot?.toObjects(PantryItem::class.java) ?: emptyList()
-            onUpdate(items)
+    fun getItemsFlow(): Flow<List<PantryItem>> {
+        val collection = getItemsCollection() ?: return emptyFlow()
+        return collection.snapshots().map { snapshot ->
+            snapshot.toObjects(PantryItem::class.java)
         }
     }
 }

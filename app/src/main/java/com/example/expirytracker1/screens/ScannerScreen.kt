@@ -80,20 +80,38 @@ fun ScannerScreen(
     val scope = rememberCoroutineScope()
     val scannedProduct by viewModel.scannedProduct.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val error by viewModel.error.collectAsState()
     
     var scanStep by remember { mutableStateOf(ScanStep.WAITING_FOR_BARCODE) }
     var detectedExpiryDate by remember { mutableStateOf<String?>(null) }
     var isProcessingOcr by remember { mutableStateOf(false) }
+    var showSuccessOverlay by remember { mutableStateOf(false) }
     
     var isFlashOn by remember { mutableStateOf(false) }
     var cameraControl by remember { mutableStateOf<CameraControl?>(null) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     
+    val currentScanStep by rememberUpdatedState(scanStep)
+    
     val analyzer = remember { 
         BarcodeAnalyzer { barcode, _ ->
-            if (scanStep == ScanStep.WAITING_FOR_BARCODE && barcode != null) {
+            if (currentScanStep == ScanStep.WAITING_FOR_BARCODE && barcode != null) {
                 viewModel.scanBarcode(barcode)
             }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            analyzer.close()
+        }
+    }
+
+    LaunchedEffect(error) {
+        error?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            viewModel.clearError()
         }
     }
 
@@ -102,9 +120,13 @@ fun ScannerScreen(
     }
 
     LaunchedEffect(scannedProduct) {
-        if (scannedProduct != null && scanStep == ScanStep.WAITING_FOR_BARCODE) {
-            vibrate(context)
-            scanStep = ScanStep.WAITING_FOR_EXPIRY
+        try {
+            if (scannedProduct != null && scanStep == ScanStep.WAITING_FOR_BARCODE) {
+                vibrate(context)
+                scanStep = ScanStep.WAITING_FOR_EXPIRY
+            }
+        } catch (e: Exception) {
+            Log.e("ScannerScreen", "Error handling scanned product", e)
         }
     }
 
@@ -250,12 +272,39 @@ fun ScannerScreen(
             isFlashOn = isFlashOn
         )
 
-        if ((isScanning && scanStep == ScanStep.WAITING_FOR_BARCODE) || isProcessingOcr) {
+        if ((isScanning && scanStep == ScanStep.WAITING_FOR_BARCODE) || isProcessingOcr || isLoading) {
             Box(
                 modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showSuccessOverlay,
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut()
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(100.dp)
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Product Added!",
+                        color = Color.White,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 
@@ -275,11 +324,13 @@ fun ScannerScreen(
                     category = scannedProduct?.categories?.split(",")?.firstOrNull() ?: "Others",
                     preFillExpiry = detectedExpiryDate,
                     onSave = { newItem ->
-                        viewModel.addProduct(newItem)
-                        viewModel.clearScannedProduct()
-                        scope.launch {
-                            Toast.makeText(context, "✓ Product Added Successfully", Toast.LENGTH_SHORT).show()
-                            onNavigateBack()
+                        viewModel.addProduct(newItem) {
+                            showSuccessOverlay = true
+                            viewModel.clearScannedProduct()
+                            scope.launch {
+                                kotlinx.coroutines.delay(2000)
+                                onNavigateBack()
+                            }
                         }
                     },
                     onCancel = { 
@@ -334,19 +385,25 @@ fun ScannerScreen(
 }
 
 fun vibrate(context: Context) {
-    val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-        vibratorManager.defaultVibrator
-    } else {
-        @Suppress("DEPRECATION")
-        context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-    }
-    
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        vibrator.vibrate(VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE))
-    } else {
-        @Suppress("DEPRECATION")
-        vibrator.vibrate(100)
+    try {
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            vibratorManager?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+        
+        vibrator?.let {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                it.vibrate(VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                it.vibrate(100)
+            }
+        }
+    } catch (e: Exception) {
+        Log.e("ScannerScreen", "Vibration failed", e)
     }
 }
 

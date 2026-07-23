@@ -53,9 +53,19 @@ fun HomeScreen(
     // --- State Management ---
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val error by viewModel.error.collectAsState()
+    val context = LocalContext.current
     
     // Use the shared list from ViewModel
-    val itemsState = viewModel.products
+    val itemsState by viewModel.products.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    LaunchedEffect(error) {
+        error?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.clearError()
+        }
+    }
 
     var selectedTabIndex by remember { mutableStateOf(0) }
     var showAddOptions by remember { mutableStateOf(false) }
@@ -64,12 +74,12 @@ fun HomeScreen(
     val sheetState = rememberModalBottomSheetState()
     
     // Filtering and sorting logic
-    val filteredItems = remember(selectedTabIndex, itemsState.toList()) {
+    val filteredItems = remember(selectedTabIndex, itemsState) {
         when (selectedTabIndex) {
             0 -> itemsState.sortedBy { it.daysLeft } // Expiring Soon
-            1 -> itemsState.toList() // All Items
+            1 -> itemsState // All Items
             2 -> itemsState.sortedByDescending { it.addedTimestamp } // Recently Added
-            else -> itemsState.toList()
+            else -> itemsState
         }
     }
 
@@ -135,7 +145,13 @@ fun HomeScreen(
                 )
             }
 
-            if (filteredItems.isEmpty()) {
+            if (isLoading && itemsState.isEmpty()) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
+            } else if (filteredItems.isEmpty()) {
                 item {
                     EmptyInventoryState()
                 }
@@ -350,12 +366,15 @@ fun FilterTabs(selectedTab: Int, onTabSelected: (Int) -> Unit) {
 @Composable
 fun InventoryCard(item: PantryItem) {
     Card(
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Inventory item: ${item.name}, ${item.daysLeft} days left" },
-        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .semantics { contentDescription = "Inventory item: ${item.name}, ${item.daysLeft} days left" },
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column {
             Row(
@@ -371,9 +390,9 @@ fun InventoryCard(item: PantryItem) {
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                            .size(64.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
                         contentAlignment = Alignment.Center
                     ) {
                         if (item.imageUrl.isNotBlank()) {
@@ -387,12 +406,13 @@ fun InventoryCard(item: PantryItem) {
                             Icon(
                                 item.icon, 
                                 contentDescription = null, 
-                                tint = MaterialTheme.colorScheme.primary
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(32.dp)
                             )
                         }
                     }
                     Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.padding(end = 8.dp)) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = item.name,
                             style = MaterialTheme.typography.titleMedium,
@@ -401,27 +421,21 @@ fun InventoryCard(item: PantryItem) {
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Surface(
-                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = item.category,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
+                        Text(
+                            text = item.category,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Surface(
-                        color = item.statusColor.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(12.dp)
+                        color = item.statusColor.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(
-                            text = "${item.daysLeft} days left",
+                            text = if (item.daysLeft == 0) "Expires Today" else "${item.daysLeft}d left",
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             color = item.statusColor,
                             fontSize = 12.sp,
@@ -430,22 +444,32 @@ fun InventoryCard(item: PantryItem) {
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Qty: ${item.quantity}",
+                        text = item.quantity,
                         color = TextGray,
-                        fontSize = 14.sp
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
+            
             // Expiry Progress Indicator line
+            val progress = remember(item.daysLeft) {
+                when {
+                    item.daysLeft <= 0 -> 1f
+                    item.daysLeft >= 30 -> 0.1f
+                    else -> 1f - (item.daysLeft.toFloat() / 30f)
+                }
+            }
+            
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(4.dp)
-                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                    .height(6.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth(if (item.daysLeft < 3) 1f else 0.3f) 
+                        .fillMaxWidth(progress)
                         .fillMaxHeight()
                         .background(item.statusColor)
                 )

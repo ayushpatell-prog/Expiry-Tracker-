@@ -1,7 +1,6 @@
 package com.example.expirytracker1.viewmodel
 
 import android.app.Application
-import androidx.compose.runtime.mutableStateListOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.expirytracker1.api.ProductData
@@ -11,14 +10,16 @@ import com.example.expirytracker1.notifications.NotificationRepository
 import com.example.expirytracker1.screens.NotificationType
 import com.example.expirytracker1.repository.ProductRepository
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 class ProductViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = ProductRepository()
     
-    private val _products = mutableStateListOf<PantryItem>()
-    val products: List<PantryItem> get() = _products
+    private val _products = MutableStateFlow<List<PantryItem>>(emptyList())
+    val products: StateFlow<List<PantryItem>> = _products.asStateFlow()
 
     private val _scannedProduct = MutableStateFlow<ProductData?>(null)
     val scannedProduct = _scannedProduct.asStateFlow()
@@ -26,20 +27,34 @@ class ProductViewModel(application: Application) : AndroidViewModel(application)
     private val _isScanning = MutableStateFlow(false)
     val isScanning = _isScanning.asStateFlow()
 
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading = _isLoading.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error = _error.asStateFlow()
+
     init {
         loadProducts()
     }
 
     private fun loadProducts() {
-        repository.getItems { items ->
-            _products.clear()
-            _products.addAll(items)
-            checkExpirations()
+        viewModelScope.launch {
+            _isLoading.value = true
+            repository.getItemsFlow()
+                .catch { e ->
+                    _error.value = "Failed to load products: ${e.message}"
+                    _isLoading.value = false
+                }
+                .collect { items ->
+                    _products.value = items
+                    _isLoading.value = false
+                    checkExpirations(items)
+                }
         }
     }
 
-    private fun checkExpirations() {
-        _products.forEach { item ->
+    private fun checkExpirations(items: List<PantryItem>) {
+        items.forEach { item ->
             generateNotificationIfNecessary(item)
         }
     }
@@ -111,22 +126,43 @@ class ProductViewModel(application: Application) : AndroidViewModel(application)
         _scannedProduct.value = null
     }
 
-    fun addProduct(item: PantryItem) {
+    fun addProduct(item: PantryItem, onSuccess: () -> Unit = {}) {
         viewModelScope.launch {
-            repository.saveProduct(item)
-            NotificationHelper.scheduleExpiryReminder(getApplication(), item)
+            _isLoading.value = true
+            try {
+                repository.saveProduct(item)
+                NotificationHelper.scheduleExpiryReminder(getApplication(), item)
+                onSuccess()
+            } catch (e: Exception) {
+                _error.value = "Failed to add product: ${e.message}"
+                android.util.Log.e("ProductViewModel", "Error adding product", e)
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
     fun deleteProduct(item: PantryItem) {
         viewModelScope.launch {
-            repository.deleteProduct(item.id)
+            try {
+                repository.deleteProduct(item.id)
+            } catch (e: Exception) {
+                _error.value = "Failed to delete product: ${e.message}"
+            }
         }
     }
     
     fun deleteProductById(id: String) {
         viewModelScope.launch {
-            repository.deleteProduct(id)
+            try {
+                repository.deleteProduct(id)
+            } catch (e: Exception) {
+                _error.value = "Failed to delete product: ${e.message}"
+            }
         }
+    }
+
+    fun clearError() {
+        _error.value = null
     }
 }
