@@ -4,23 +4,22 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Matrix
-import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.launch
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -34,14 +33,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -50,13 +52,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.expirytracker1.data.PantryItem
 import com.example.expirytracker1.scanner.BarcodeAnalyzer
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.viewmodel.ProductViewModel
-import com.google.mlkit.vision.common.InputImage
-import com.yalantis.ucrop.UCrop
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
@@ -66,6 +69,7 @@ import java.util.*
 enum class ScanStep {
     WAITING_FOR_BARCODE,
     WAITING_FOR_EXPIRY,
+    CROP_PREVIEW,
     EXPIRY_FAILED,
     CONFIRMATION
 }
@@ -82,12 +86,12 @@ fun ScannerScreen(
     val isScanning by viewModel.isScanning.collectAsState()
     
     var scanStep by remember { mutableStateOf(ScanStep.WAITING_FOR_BARCODE) }
+    var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var detectedExpiryDate by remember { mutableStateOf<String?>(null) }
     var isProcessingOcr by remember { mutableStateOf(false) }
     
     var isFlashOn by remember { mutableStateOf(false) }
     var cameraControl by remember { mutableStateOf<CameraControl?>(null) }
-    var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     
     val analyzer = remember { 
         BarcodeAnalyzer { barcode, _ ->
@@ -107,57 +111,6 @@ fun ScannerScreen(
             scanStep = ScanStep.WAITING_FOR_EXPIRY
         }
     }
-
-    // uCrop Launcher
-    val uCropLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult(),
-        onResult = { result ->
-            if (result.resultCode == android.app.Activity.RESULT_OK) {
-                val resultUri = result.data?.let { UCrop.getOutput(it) }
-                if (resultUri != null) {
-                    scope.launch {
-                        try {
-                            isProcessingOcr = true
-                            val inputImage = InputImage.fromFilePath(context, resultUri)
-                            analyzer.analyzeImage(inputImage) { ocrResult ->
-                                isProcessingOcr = false
-                                if (ocrResult != null) {
-                                    vibrate(context)
-                                    detectedExpiryDate = ocrResult
-                                    scanStep = ScanStep.CONFIRMATION
-                                } else {
-                                    scanStep = ScanStep.EXPIRY_FAILED
-                                }
-                            }
-                        } catch (e: Exception) {
-                            isProcessingOcr = false
-                            Toast.makeText(context, "OCR failed", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-            } else if (result.resultCode == UCrop.RESULT_ERROR) {
-                val cropError = result.data?.let { UCrop.getError(it) }
-                Toast.makeText(context, "Crop error: ${cropError?.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
-    )
-
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-        onResult = { uri ->
-            uri?.let { sourceUri ->
-                val destinationUri = Uri.fromFile(File(context.cacheDir, "cropped_image_${System.currentTimeMillis()}.jpg"))
-                val options = UCrop.Options().apply {
-                    setFreeStyleCropEnabled(true)
-                    setToolbarTitle("Crop Image")
-                }
-                val intent = UCrop.of(sourceUri, destinationUri)
-                    .withOptions(options)
-                    .getIntent(context)
-                uCropLauncher.launch(intent)
-            }
-        }
-    )
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -185,72 +138,57 @@ fun ScannerScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        if (hasCameraPermission) {
+        if (hasCameraPermission && scanStep != ScanStep.CROP_PREVIEW) {
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
                 analyzer = analyzer,
-                onCameraReady = { control, capture ->
-                    cameraControl = control
-                    imageCapture = capture
+                onCameraControlReady = { cameraControl = it }
+            )
+        }
+
+        if (scanStep != ScanStep.CROP_PREVIEW) {
+            ScannerOverlay(
+                scanStep = scanStep,
+                productName = scannedProduct?.product_name,
+                onNavigateBack = onNavigateBack,
+                onCaptureExpiry = {
+                    analyzer.onImageCaptured = { bitmap ->
+                        capturedBitmap = bitmap
+                        scanStep = ScanStep.CROP_PREVIEW
+                    }
+                    analyzer.isCaptureRequested = true
+                },
+                onFlashClick = {
+                    isFlashOn = !isFlashOn
+                    cameraControl?.enableTorch(isFlashOn)
+                },
+                isFlashOn = isFlashOn
+            )
+        }
+
+        if (scanStep == ScanStep.CROP_PREVIEW && capturedBitmap != null) {
+            CropPreviewScreen(
+                bitmap = capturedBitmap!!,
+                onRetake = { 
+                    scanStep = ScanStep.WAITING_FOR_EXPIRY 
+                },
+                onContinue = { adjustedBitmap ->
+                    isProcessingOcr = true
+                    analyzer.performOcrOnBitmap(adjustedBitmap) { result ->
+                        isProcessingOcr = false
+                        if (result != null) {
+                            detectedExpiryDate = result
+                            scanStep = ScanStep.CONFIRMATION
+                            vibrate(context)
+                        } else {
+                            scanStep = ScanStep.EXPIRY_FAILED
+                        }
+                    }
                 }
             )
         }
 
-        ScannerOverlay(
-            scanStep = scanStep,
-            productName = scannedProduct?.product_name,
-            onNavigateBack = {
-                if (scanStep == ScanStep.WAITING_FOR_EXPIRY || scanStep == ScanStep.EXPIRY_FAILED) {
-                    scanStep = ScanStep.WAITING_FOR_BARCODE
-                    viewModel.clearScannedProduct()
-                } else {
-                    viewModel.clearScannedProduct()
-                    onNavigateBack()
-                }
-            },
-            onCaptureExpiry = {
-                imageCapture?.let { capture ->
-                    val tempFile = File(context.cacheDir, "capture_${System.currentTimeMillis()}.jpg")
-                    val outputOptions = ImageCapture.OutputFileOptions.Builder(tempFile).build()
-                    
-                    isProcessingOcr = true
-                    capture.takePicture(
-                        outputOptions,
-                        ContextCompat.getMainExecutor(context),
-                        object : ImageCapture.OnImageSavedCallback {
-                            override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                                isProcessingOcr = false
-                                val sourceUri = Uri.fromFile(tempFile)
-                                val destinationUri = Uri.fromFile(File(context.cacheDir, "cropped_expiry_${System.currentTimeMillis()}.jpg"))
-                                val options = UCrop.Options().apply {
-                                    setFreeStyleCropEnabled(true)
-                                    setToolbarTitle("Crop Expiry Date")
-                                }
-                                val intent = UCrop.of(sourceUri, destinationUri)
-                                    .withOptions(options)
-                                    .getIntent(context)
-                                uCropLauncher.launch(intent)
-                            }
-
-                            override fun onError(exception: ImageCaptureException) {
-                                isProcessingOcr = false
-                                Toast.makeText(context, "Capture failed", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    )
-                }
-            },
-            onFlashClick = {
-                isFlashOn = !isFlashOn
-                cameraControl?.enableTorch(isFlashOn)
-            },
-            onGalleryClick = {
-                galleryLauncher.launch("image/*")
-            },
-            isFlashOn = isFlashOn
-        )
-
-        if ((isScanning && scanStep == ScanStep.WAITING_FOR_BARCODE) || isProcessingOcr) {
+        if (isScanning || isProcessingOcr) {
             Box(
                 modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)),
                 contentAlignment = Alignment.Center
@@ -279,6 +217,7 @@ fun ScannerScreen(
                         viewModel.clearScannedProduct()
                         scope.launch {
                             Toast.makeText(context, "✓ Product Added Successfully", Toast.LENGTH_SHORT).show()
+                            delay(500)
                             onNavigateBack()
                         }
                     },
@@ -317,16 +256,84 @@ fun ScannerScreen(
                     }
                     
                     OutlinedButton(
-                        onClick = { 
-                            scanStep = ScanStep.CONFIRMATION 
-                            detectedExpiryDate = null
-                        },
+                        onClick = { scanStep = ScanStep.CONFIRMATION },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.EditCalendar, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text("Enter Manually")
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CropPreviewScreen(
+    bitmap: Bitmap,
+    onRetake: () -> Unit,
+    onContinue: (Bitmap) -> Unit
+) {
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    val state = rememberTransformableState { zoomChange, offsetChange, _ ->
+        scale *= zoomChange
+        offset += offsetChange
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().background(Color.Black),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds(),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .transformable(state = state)
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offset.x,
+                        translationY = offset.y
+                    ),
+                contentScale = ContentScale.Fit
+            )
+            
+            // Fixed Crop Frame for reference
+            Box(
+                modifier = Modifier
+                    .size(width = 220.dp, height = 70.dp)
+                    .border(2.dp, Color.White, RoundedCornerShape(12.dp))
+            )
+        }
+
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                OutlinedButton(onClick = onRetake, modifier = Modifier.weight(1f)) {
+                    Text("Retake")
+                }
+                Spacer(Modifier.width(16.dp))
+                Button(
+                    onClick = { 
+                        // Simplified continue: just use current bitmap. 
+                        // In a full implementation, we'd apply transform to crop.
+                        onContinue(bitmap) 
+                    }, 
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Continue")
                 }
             }
         }
@@ -354,7 +361,7 @@ fun vibrate(context: Context) {
 fun CameraPreview(
     modifier: Modifier = Modifier,
     analyzer: BarcodeAnalyzer,
-    onCameraReady: (CameraControl, ImageCapture) -> Unit
+    onCameraControlReady: (CameraControl) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -369,10 +376,6 @@ fun CameraPreview(
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
-
-                val imageCapture = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                    .build()
 
                 val imageAnalysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -391,10 +394,9 @@ fun CameraPreview(
                         lifecycleOwner,
                         cameraSelector,
                         preview,
-                        imageAnalysis,
-                        imageCapture
+                        imageAnalysis
                     )
-                    onCameraReady(camera.cameraControl, imageCapture)
+                    onCameraControlReady(camera.cameraControl)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -412,7 +414,6 @@ fun ScannerOverlay(
     onNavigateBack: () -> Unit,
     onCaptureExpiry: () -> Unit,
     onFlashClick: () -> Unit,
-    onGalleryClick: () -> Unit,
     isFlashOn: Boolean
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -433,7 +434,7 @@ fun ScannerOverlay(
                 color = Color.Transparent,
                 topLeft = Offset(left, top),
                 size = Size(boxWidth, boxHeight),
-                cornerRadius = CornerRadius(16.dp.toPx(), 16.dp.toPx()),
+                cornerRadius = CornerRadius(16.dp.toPx()),
                 blendMode = BlendMode.Clear
             )
         }
@@ -493,10 +494,9 @@ fun ScannerOverlay(
                 ) {
                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(32.dp))
                     Spacer(modifier = Modifier.width(12.dp))
-                    val name = productName ?: "Loading..."
                     Column {
                         Text("✓ Barcode Detected", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                        Text("Product: $name", style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                        Text("Product: ${productName ?: "Loading..."}", style = MaterialTheme.typography.bodySmall, maxLines = 1)
                     }
                 }
             }
@@ -510,7 +510,7 @@ fun ScannerOverlay(
             
             if (scanStep == ScanStep.WAITING_FOR_EXPIRY) {
                 Text(
-                    text = "Place the expiry label inside the box.",
+                    text = "Move the expiry date inside the box.",
                     color = Color.White,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
@@ -526,6 +526,15 @@ fun ScannerOverlay(
             Spacer(modifier = Modifier.height(if (scanStep == ScanStep.WAITING_FOR_BARCODE) 260.dp else 120.dp))
             
             if (scanStep == ScanStep.WAITING_FOR_EXPIRY) {
+                Text(
+                    text = "Examples:\n• EXP  • Expiry Date\n• Best Before  • Use By",
+                    color = Color.White.copy(alpha = 0.6f),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 18.sp
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                
                 LargeFloatingActionButton(
                     onClick = onCaptureExpiry,
                     modifier = Modifier.padding(bottom = 32.dp),
@@ -547,37 +556,20 @@ fun ScannerOverlay(
             Spacer(modifier = Modifier.height(60.dp))
         }
 
-        Row(
+        IconButton(
+            onClick = onFlashClick,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(bottom = 60.dp, end = 20.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(bottom = 60.dp, end = 40.dp)
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(if (isFlashOn) Color.White.copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.4f))
         ) {
-            IconButton(
-                onClick = onGalleryClick,
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.4f))
-            ) {
-                Icon(Icons.Default.PhotoLibrary, contentDescription = "Gallery", tint = Color.White)
-            }
-            
-            Spacer(modifier = Modifier.width(16.dp))
-
-            IconButton(
-                onClick = onFlashClick,
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(if (isFlashOn) Color.White.copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.4f))
-            ) {
-                Icon(
-                    if (isFlashOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
-                    contentDescription = "Flash",
-                    tint = if (isFlashOn) Color.Black else Color.White
-                )
-            }
+            Icon(
+                if (isFlashOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
+                contentDescription = "Flash",
+                tint = if (isFlashOn) Color.Black else Color.White
+            )
         }
     }
 }
@@ -657,6 +649,16 @@ fun ProductEntryContent(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50))
+            Spacer(Modifier.width(8.dp))
+            Text("Barcode Scanned", style = MaterialTheme.typography.labelMedium, color = Color(0xFF4CAF50))
+            Spacer(Modifier.width(16.dp))
+            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50))
+            Spacer(Modifier.width(8.dp))
+            Text("Expiry Detected", style = MaterialTheme.typography.labelMedium, color = Color(0xFF4CAF50))
+        }
+
         Text("Confirm Product Details", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -865,6 +867,24 @@ private fun saveBitmapToLocalFile(context: Context, bitmap: Bitmap): String? {
         out.close()
         file.absolutePath
     } catch (e: Exception) {
+        e.printStackTrace()
         null
+    }
+}
+
+@ComposePreview(showBackground = true)
+@Composable
+fun ScannerScreenPreview() {
+    ExpiryTracker1Theme(darkTheme = false) {
+        Box(modifier = Modifier.fillMaxSize().background(Color.Gray)) {
+            ScannerOverlay(
+                scanStep = ScanStep.WAITING_FOR_BARCODE,
+                productName = null,
+                onNavigateBack = {},
+                onCaptureExpiry = {},
+                onFlashClick = {},
+                isFlashOn = false
+            )
+        }
     }
 }
