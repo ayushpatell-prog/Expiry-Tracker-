@@ -158,4 +158,9 @@ class BarcodeAnalyzer(
             }
             .addOnFailureListener { onComplete(null) }
     }
+
+    fun close() {
+        barcodeScanner.close()
+        textRecognizer.close()
+    }
 }

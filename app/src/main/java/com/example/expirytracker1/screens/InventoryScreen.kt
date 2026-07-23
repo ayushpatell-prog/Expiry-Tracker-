@@ -48,9 +48,6 @@ fun InventoryScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All") }
     
-    // Use shared list from ViewModel
-    val allItems = viewModel.products
-
     // Filter & Sort States
     var showFilterSheet by remember { mutableStateOf(false) }
     var selectedItemForDetails by remember { mutableStateOf<PantryItem?>(null) }
@@ -60,6 +57,19 @@ fun InventoryScreen(
     val sheetState = rememberModalBottomSheetState()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val error by viewModel.error.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    // Use shared list from ViewModel
+    val allItems by viewModel.products.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    LaunchedEffect(error) {
+        error?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
+            viewModel.clearError()
+        }
+    }
 
     // Applied states
     var appliedSortBy by remember { mutableStateOf("Expiry Date (Nearest First)") }
@@ -184,7 +194,9 @@ fun InventoryScreen(
 
             // Inventory List with Animations
             Box(modifier = Modifier.fillMaxSize()) {
-                if (filteredItems.isEmpty()) {
+                if (isLoading && allItems.isEmpty()) {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                } else if (filteredItems.isEmpty()) {
                     EmptyState(
                         isSearch = searchQuery.isNotEmpty(),
                         onClear = { searchQuery = "" }
