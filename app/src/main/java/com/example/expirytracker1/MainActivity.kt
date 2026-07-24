@@ -42,13 +42,16 @@ class MainActivity : ComponentActivity() {
                     targetState = currentScreen,
                     label = "ScreenTransition",
                     transitionSpec = {
-                        if (targetState == "HOME" && (initialState == "LOGIN" || initialState == "SIGNUP")) {
+                        val targetBase = targetState.split("?").first()
+                        val initialBase = initialState.split("?").first()
+                        
+                        if (targetBase == "HOME" && (initialBase == "LOGIN" || initialBase == "SIGNUP")) {
                             (fadeIn(animationSpec = tween(500)) + scaleIn(initialScale = 0.8f))
                                 .togetherWith(fadeOut(animationSpec = tween(500)))
-                        } else if (targetState == "SCANNER") {
+                        } else if (targetBase == "SCANNER") {
                             (slideInVertically(animationSpec = tween(400)) { it } + fadeIn())
                                 .togetherWith(fadeOut(animationSpec = tween(400)))
-                        } else if (initialState == "SCANNER") {
+                        } else if (initialBase == "SCANNER") {
                             (fadeIn(animationSpec = tween(400)))
                                 .togetherWith(slideOutVertically(animationSpec = tween(400)) { it } + fadeOut())
                         } else {
@@ -57,7 +60,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 ) { screen ->
-                    when (screen) {
+                    val screenBase = screen.split("?").first()
+                    when (screenBase) {
                         "LOGIN" -> LoginScreen(
                             onSignUpClick = { currentScreen = "SIGNUP" },
                             onLoginSuccess = { currentScreen = "HOME" }
@@ -84,6 +88,22 @@ class MainActivity : ComponentActivity() {
                         )
 
                         "NOTIFICATIONS" -> NotificationsScreen(onNavigateBack = { currentScreen = "HOME" })
+
+                        "ASSISTANT" -> {
+                            val params = screen.split("?").getOrNull(1)?.split("&")?.associate {
+                                val pair = it.split("=")
+                                if (pair.size == 2) pair[0] to pair[1] else pair[0] to ""
+                            } ?: emptyMap()
+                            
+                            AssistantScreen(
+                                productName = params["name"] ?: "",
+                                category = params["category"] ?: "",
+                                quantity = params["quantity"] ?: "",
+                                expiryDate = params["expiry"] ?: "",
+                                imageUrl = params["image"] ?: "",
+                                onNavigate = { currentScreen = it }
+                            )
+                        }
 
                         "SCANNER" -> ScannerScreen(
                             viewModel = productViewModel,
