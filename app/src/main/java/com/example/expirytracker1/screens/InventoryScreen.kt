@@ -68,6 +68,9 @@ fun InventoryScreen(
     val aiError by assistantViewModel.error.collectAsState()
     var showAiSheet by remember { mutableStateOf(false) }
     var aiTargetItems by remember { mutableStateOf<List<PantryItem>>(emptyList()) }
+    var showItemSelectionDialog by remember { mutableStateOf(false) }
+    var showMultiSelectSheet by remember { mutableStateOf(false) }
+    val selectedItemsForAi = remember { mutableStateListOf<PantryItem>() }
 
     LaunchedEffect(error) {
         error?.let {
@@ -230,8 +233,7 @@ fun InventoryScreen(
                                 onSetReminder = { selectedItemForReminder = item },
                                 onGetAiSuggestions = {
                                     aiTargetItems = listOf(item)
-                                    showAiSheet = true
-                                    assistantViewModel.getRecipeSuggestions(listOf(item.name to item.category))
+                                    showItemSelectionDialog = true
                                 },
                                 onDelete = {
                                     // Remove from shared ViewModel
@@ -302,6 +304,72 @@ fun InventoryScreen(
                         scope.launch { snackbarHostState.showSnackbar("Reminder updated") }
                     },
                     onCancel = { selectedItemForReminder = null }
+                )
+            }
+        }
+
+        if (showItemSelectionDialog && aiTargetItems.isNotEmpty()) {
+            AlertDialog(
+                onDismissRequest = { showItemSelectionDialog = false },
+                title = { Text("AI Recipe Options", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Would you like to use just this item or combine it with others?")
+                        
+                        Button(
+                            onClick = {
+                                showItemSelectionDialog = false
+                                showAiSheet = true
+                                assistantViewModel.getRecipeSuggestions(aiTargetItems.map { it.name to it.category })
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Use Only ${aiTargetItems.first().name}")
+                        }
+                        
+                        OutlinedButton(
+                            onClick = {
+                                showItemSelectionDialog = false
+                                selectedItemsForAi.clear()
+                                selectedItemsForAi.add(aiTargetItems.first())
+                                // We'll open a selection sheet next
+                                showMultiSelectSheet = true
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Select Multiple Items")
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showItemSelectionDialog = false }) { Text("Cancel") }
+                },
+                shape = RoundedCornerShape(24.dp)
+            )
+        }
+
+        if (showMultiSelectSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showMultiSelectSheet = false },
+                modifier = Modifier.fillMaxHeight(0.8f)
+            ) {
+                MultiItemSelectionContent(
+                    allItems = allItems,
+                    selectedItems = selectedItemsForAi,
+                    onItemsSelected = { finalSelection ->
+                        selectedItemsForAi.clear()
+                        selectedItemsForAi.addAll(finalSelection)
+                    },
+                    onConfirm = {
+                        showMultiSelectSheet = false
+                        aiTargetItems = selectedItemsForAi.toList()
+                        showAiSheet = true
+                        assistantViewModel.getRecipeSuggestions(aiTargetItems.map { it.name to it.category })
+                    },
+                    onCancel = { showMultiSelectSheet = false }
                 )
             }
         }
@@ -920,6 +988,80 @@ fun EditProductContent(item: PantryItem, onSave: (PantryItem) -> Unit, onCancel:
 @Composable
 fun InventoryScreenPreview() {
     ExpiryTracker1Theme { InventoryScreen(viewModel = viewModel()) }
+}
+
+@Composable
+fun MultiItemSelectionContent(
+    allItems: List<PantryItem>,
+    selectedItems: List<PantryItem>,
+    onItemsSelected: (List<PantryItem>) -> Unit,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "Select Items for Recipe",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            "Choose products to combine into a recipe.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextGray,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(allItems, key = { it.id }) { item ->
+                val isSelected = selectedItems.any { it.id == item.id }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                        .clickable {
+                            val newList = selectedItems.toMutableList()
+                            if (isSelected) newList.removeAll { it.id == item.id }
+                            else newList.add(item)
+                            onItemsSelected(newList)
+                        }
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = null // Click handled by Row
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(item.name, fontWeight = FontWeight.Bold)
+                        Text(item.category, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Cancel") }
+            Button(
+                onClick = onConfirm,
+                modifier = Modifier.weight(1f),
+                enabled = selectedItems.isNotEmpty()
+            ) {
+                Text("Get Recipe (${selectedItems.size})")
+            }
+        }
+    }
 }
 
 @Composable

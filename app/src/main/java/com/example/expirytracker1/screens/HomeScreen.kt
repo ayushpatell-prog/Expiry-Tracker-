@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.expirytracker1.data.PantryItem
+import com.example.expirytracker1.notifications.NotificationRepository
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.TextGray
 import com.example.expirytracker1.viewmodel.ProductViewModel
@@ -367,8 +368,21 @@ fun HeaderSection(userName: String, subtitle: String, onProfileClick: () -> Unit
                 )
             }
         }
-        IconButton(onClick = onNotificationClick) {
-            Icon(Icons.Default.NotificationsNone, contentDescription = "Notifications", tint = TextGray)
+        val hasUnreadNotifications = NotificationRepository.notifications.any { !it.isRead }
+        
+        BadgedBox(
+            badge = {
+                if (hasUnreadNotifications) {
+                    Badge(
+                        containerColor = Color.Red,
+                        modifier = Modifier.offset(x = (-4).dp, y = 4.dp)
+                    )
+                }
+            }
+        ) {
+            IconButton(onClick = onNotificationClick) {
+                Icon(Icons.Default.NotificationsNone, contentDescription = "Notifications", tint = TextGray)
+            }
         }
     }
 }
