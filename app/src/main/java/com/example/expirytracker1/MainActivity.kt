@@ -24,6 +24,8 @@ import com.example.expirytracker1.viewmodel.ProductViewModel
 import com.example.expirytracker1.auth.FirebaseAuthManager
 import com.example.expirytracker1.notifications.NotificationHelper
 
+import com.example.expirytracker1.viewmodel.AssistantViewModel
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,6 +34,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val productViewModel: ProductViewModel = viewModel()
+            val assistantViewModel: AssistantViewModel = viewModel()
             var darkMode by remember { mutableStateOf(false) }
             ExpiryTracker1Theme(darkTheme = darkMode) {
                 var currentScreen by remember { 
@@ -70,10 +73,12 @@ class MainActivity : ComponentActivity() {
 
                         "HOME" -> HomeScreen(
                             viewModel = productViewModel,
+                            assistantViewModel = assistantViewModel,
                             onNavigate = { currentScreen = it }
                         )
                         "INVENTORY" -> InventoryScreen(
                             viewModel = productViewModel,
+                            assistantViewModel = assistantViewModel,
                             onNavigate = { currentScreen = it }
                         )
                         "ALERTS" -> SettingsScreen(onNavigate = { currentScreen = it })

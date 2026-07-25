@@ -31,6 +31,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import com.example.expirytracker1.data.PantryItem
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.TextGray
@@ -63,7 +67,7 @@ fun InventoryScreen(
     val isAiLoading by assistantViewModel.isLoading.collectAsState()
     val aiError by assistantViewModel.error.collectAsState()
     var showAiSheet by remember { mutableStateOf(false) }
-    var aiTargetItem by remember { mutableStateOf<PantryItem?>(null) }
+    var aiTargetItems by remember { mutableStateOf<List<PantryItem>>(emptyList()) }
 
     LaunchedEffect(error) {
         error?.let {
@@ -225,9 +229,9 @@ fun InventoryScreen(
                                 onEdit = { itemToEdit = item },
                                 onSetReminder = { selectedItemForReminder = item },
                                 onGetAiSuggestions = {
-                                    aiTargetItem = item
+                                    aiTargetItems = listOf(item)
                                     showAiSheet = true
-                                    assistantViewModel.getRecipeSuggestions(item.name, item.category)
+                                    assistantViewModel.getRecipeSuggestions(listOf(item.name to item.category))
                                 },
                                 onDelete = {
                                     // Remove from shared ViewModel
@@ -302,20 +306,20 @@ fun InventoryScreen(
             }
         }
 
-        if (showAiSheet && aiTargetItem != null) {
+        if (showAiSheet && aiTargetItems.isNotEmpty()) {
             ModalBottomSheet(
                 onDismissRequest = { 
                     showAiSheet = false
-                    aiTargetItem = null
+                    aiTargetItems = emptyList()
                 },
                 modifier = Modifier.fillMaxHeight(0.8f)
             ) {
                 AiAssistantSheetContent(
-                    productName = aiTargetItem!!.name,
+                    productNames = aiTargetItems.joinToString(", ") { it.name },
                     recipe = aiRecipe,
                     isLoading = isAiLoading,
                     error = aiError,
-                    onRetry = { assistantViewModel.getRecipeSuggestions(aiTargetItem!!.name, aiTargetItem!!.category) }
+                    onRetry = { assistantViewModel.getRecipeSuggestions(aiTargetItems.map { it.name to it.category }) }
                 )
             }
         }
@@ -506,7 +510,7 @@ fun PantryItemCard(
             ) {
                 Icon(Icons.Default.AutoAwesome, contentDescription = "AI Assistant", modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("✨ Get AI Recipe Suggestions", style = MaterialTheme.typography.labelMedium)
+                Text("Get AI Recipe Suggestions", style = MaterialTheme.typography.labelMedium)
             }
 
             // Expiry Line
@@ -544,7 +548,7 @@ fun PantryItemCard(
 
 @Composable
 fun AiAssistantSheetContent(
-    productName: String,
+    productNames: String,
     recipe: String?,
     isLoading: Boolean,
     error: String?,
@@ -578,7 +582,7 @@ fun AiAssistantSheetContent(
         Spacer(Modifier.height(16.dp))
         
         Text(
-            "Generating recipes for: $productName",
+            "Generating recipes for: $productNames",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.Start)
@@ -613,7 +617,7 @@ fun AiAssistantSheetContent(
                     )
                 ) {
                     Text(
-                        text = it,
+                        text = parseMarkdown(it),
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodyLarge,
                         lineHeight = 24.sp
@@ -623,6 +627,25 @@ fun AiAssistantSheetContent(
         }
         
         Spacer(Modifier.height(32.dp))
+    }
+}
+
+/**
+ * Simple parser to convert basic markdown bold (**text**) to AnnotatedString
+ */
+fun parseMarkdown(text: String): AnnotatedString {
+    return buildAnnotatedString {
+        val parts = text.split("**")
+        parts.forEachIndexed { index, part ->
+            if (index % 2 == 1) {
+                // Odd indices are between ** markers
+                withStyle(style = SpanStyle(fontWeight = FontWeight.ExtraBold)) {
+                    append(part)
+                }
+            } else {
+                append(part)
+            }
+        }
     }
 }
 
