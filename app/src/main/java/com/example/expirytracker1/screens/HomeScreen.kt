@@ -44,10 +44,13 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
+import com.example.expirytracker1.viewmodel.AssistantViewModel
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: ProductViewModel,
+    assistantViewModel: AssistantViewModel = viewModel(),
     onNavigate: (String) -> Unit = {}
 ) {
     // --- State Management ---
@@ -56,6 +59,13 @@ fun HomeScreen(
     val error by viewModel.error.collectAsState()
     val context = LocalContext.current
     
+    // Assistant States
+    val aiRecipe by assistantViewModel.recipe.collectAsState()
+    val isAiLoading by assistantViewModel.isLoading.collectAsState()
+    val aiError by assistantViewModel.error.collectAsState()
+    var showAiSheet by remember { mutableStateOf(false) }
+    var expiringItemsForAi by remember { mutableStateOf<List<PantryItem>>(emptyList()) }
+
     // Use the shared list from ViewModel
     val itemsState by viewModel.products.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -135,6 +145,20 @@ fun HomeScreen(
             }
 
             item {
+                val soonExpiring = itemsState.filter { it.daysLeft in 0..3 }
+                if (soonExpiring.size >= 2) {
+                    ExpiringItemsBanner(
+                        count = soonExpiring.size,
+                        onCookClick = {
+                            expiringItemsForAi = soonExpiring
+                            showAiSheet = true
+                            assistantViewModel.getRecipeSuggestions(soonExpiring.map { it.name to it.category })
+                        }
+                    )
+                }
+            }
+
+            item {
                 ScanBanner(onScanClick = { onNavigate("SCANNER") })
             }
 
@@ -201,14 +225,84 @@ fun HomeScreen(
         ) {
             ManualAddContent(
                 onSave = { newItem ->
-                    viewModel.addProduct(newItem)
-                    showManualAdd = false
-                    scope.launch {
-                        snackbarHostState.showSnackbar("Product Added Successfully")
+                    viewModel.addProduct(newItem) {
+                        showManualAdd = false
+                        scope.launch {
+                            snackbarHostState.showSnackbar("Product Added Successfully")
+                        }
                     }
                 },
                 onCancel = { showManualAdd = false }
             )
+        }
+    }
+
+    if (showAiSheet && expiringItemsForAi.isNotEmpty()) {
+        ModalBottomSheet(
+            onDismissRequest = { 
+                showAiSheet = false
+                expiringItemsForAi = emptyList()
+            },
+            modifier = Modifier.fillMaxHeight(0.8f)
+        ) {
+            AiAssistantSheetContent(
+                productNames = expiringItemsForAi.joinToString(", ") { it.name },
+                recipe = aiRecipe,
+                isLoading = isAiLoading,
+                error = aiError,
+                onRetry = { assistantViewModel.getRecipeSuggestions(expiringItemsForAi.map { it.name to it.category }) }
+            )
+        }
+    }
+}
+
+@Composable
+fun ExpiringItemsBanner(count: Int, onCookClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f))
+    ) {
+        Row(
+            modifier = Modifier.padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.error),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.RestaurantMenu, contentDescription = null, tint = Color.White)
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Cook $count items soon!",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Text(
+                    "Get a combined recipe to avoid waste.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                )
+            }
+            Button(
+                onClick = onCookClick,
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("Cook Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
