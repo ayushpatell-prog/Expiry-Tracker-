@@ -662,6 +662,7 @@ fun ManualAddContent(onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
     var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Vegetables") }
     var quantity by remember { mutableStateOf("") }
+    var unit by remember { mutableStateOf("Pcs") }
     var manDate by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var expDate by remember { mutableLongStateOf(System.currentTimeMillis() + 86400000 * 7) }
     var reminder by remember { mutableStateOf("On Expiry Date") }
@@ -669,6 +670,7 @@ fun ManualAddContent(onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
     var capturedBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     
     var showCatDropdown by remember { mutableStateOf(false) }
+    var showUnitDropdown by remember { mutableStateOf(false) }
     var showRemDropdown by remember { mutableStateOf(false) }
     var showPhotoOptions by remember { mutableStateOf(false) }
     
@@ -761,12 +763,34 @@ fun ManualAddContent(onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
             }
         }
         
-        OutlinedTextField(
-            value = quantity,
-            onValueChange = { quantity = it },
-            label = { Text("Quantity") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = quantity,
+                onValueChange = { quantity = it },
+                label = { Text("Quantity") },
+                modifier = Modifier.weight(1f)
+            )
+            
+            Box(modifier = Modifier.weight(1f)) {
+                OutlinedTextField(
+                    value = unit,
+                    onValueChange = { },
+                    label = { Text("Unit") },
+                    readOnly = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        IconButton(onClick = { showUnitDropdown = true }) {
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                        }
+                    }
+                )
+                DropdownMenu(expanded = showUnitDropdown, onDismissRequest = { showUnitDropdown = false }) {
+                    listOf("Pcs", "Kg", "Gm", "Ltr", "Ml", "Pack", "Box").forEach { u ->
+                        DropdownMenuItem(text = { Text(u) }, onClick = { unit = u; showUnitDropdown = false })
+                    }
+                }
+            }
+        }
         
         val dateFormat = SimpleDateFormat("dd MMM", Locale.getDefault())
         val displayDateFormat = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
@@ -835,7 +859,7 @@ fun ManualAddContent(onSave: (PantryItem) -> Unit, onCancel: () -> Unit) {
                             name = name,
                             category = category,
                             expiryTimestamp = expDate,
-                            quantity = quantity.ifBlank { "1" },
+                            quantity = if (quantity.isNotBlank()) "$quantity $unit" else "1 $unit",
                             expiryDate = dateFormat.format(Date(expDate)),
                             imageUrl = finalImageUrl
                         ))
