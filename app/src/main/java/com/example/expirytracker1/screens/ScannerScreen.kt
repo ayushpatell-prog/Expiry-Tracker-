@@ -13,6 +13,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
@@ -87,6 +88,7 @@ fun ScannerScreen(
     var detectedExpiryDate by remember { mutableStateOf<String?>(null) }
     var isProcessingOcr by remember { mutableStateOf(false) }
     var showSuccessOverlay by remember { mutableStateOf(false) }
+    var showBarcodeDetected by remember { mutableStateOf(false) }
     
     var isFlashOn by remember { mutableStateOf(false) }
     var cameraControl by remember { mutableStateOf<CameraControl?>(null) }
@@ -94,6 +96,11 @@ fun ScannerScreen(
     
     val currentScanStep by rememberUpdatedState(scanStep)
     
+    BackHandler {
+        viewModel.clearScannedProduct()
+        onNavigateBack()
+    }
+
     val analyzer = remember { 
         BarcodeAnalyzer { barcode, _ ->
             if (currentScanStep == ScanStep.WAITING_FOR_BARCODE && barcode != null) {
@@ -124,9 +131,17 @@ fun ScannerScreen(
             if (scannedProduct != null && scanStep == ScanStep.WAITING_FOR_BARCODE) {
                 vibrate(context)
                 scanStep = ScanStep.WAITING_FOR_EXPIRY
+                showBarcodeDetected = true
             }
         } catch (e: Exception) {
             Log.e("ScannerScreen", "Error handling scanned product", e)
+        }
+    }
+
+    LaunchedEffect(showBarcodeDetected) {
+        if (showBarcodeDetected) {
+            kotlinx.coroutines.delay(3000)
+            showBarcodeDetected = false
         }
     }
 
@@ -221,14 +236,10 @@ fun ScannerScreen(
         ScannerOverlay(
             scanStep = scanStep,
             productName = scannedProduct?.product_name,
+            showBarcodeDetected = showBarcodeDetected,
             onNavigateBack = {
-                if (scanStep == ScanStep.WAITING_FOR_EXPIRY || scanStep == ScanStep.EXPIRY_FAILED) {
-                    scanStep = ScanStep.WAITING_FOR_BARCODE
-                    viewModel.clearScannedProduct()
-                } else {
-                    viewModel.clearScannedProduct()
-                    onNavigateBack()
-                }
+                viewModel.clearScannedProduct()
+                onNavigateBack()
             },
             onCaptureExpiry = {
                 imageCapture?.let { capture ->
@@ -466,6 +477,7 @@ fun CameraPreview(
 fun ScannerOverlay(
     scanStep: ScanStep,
     productName: String?,
+    showBarcodeDetected: Boolean,
     onNavigateBack: () -> Unit,
     onCaptureExpiry: () -> Unit,
     onFlashClick: () -> Unit,
@@ -533,7 +545,7 @@ fun ScannerOverlay(
         }
 
         AnimatedVisibility(
-            visible = scanStep != ScanStep.WAITING_FOR_BARCODE,
+            visible = showBarcodeDetected,
             enter = slideInVertically { -it } + fadeIn(),
             exit = slideOutVertically { -it } + fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 60.dp)
@@ -791,7 +803,7 @@ fun ProductEntryContent(
                     modifier = Modifier.fillMaxWidth()
                 )
                 DropdownMenu(expanded = showUnitDropdown, onDismissRequest = { showUnitDropdown = false }) {
-                    listOf("Pcs", "Kg", "Gm", "Ltr", "Ml", "Pack").forEach { u ->
+                    listOf("Pcs", "Kg", "Gm", "Ltr", "Ml", "Pack", "Box").forEach { u ->
                         DropdownMenuItem(text = { Text(u) }, onClick = { unit = u; showUnitDropdown = false })
                     }
                 }
