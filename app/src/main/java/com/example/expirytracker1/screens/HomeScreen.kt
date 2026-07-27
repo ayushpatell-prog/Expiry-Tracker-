@@ -956,12 +956,6 @@ fun BottomNavigationBar(onNavigate: (String) -> Unit) {
             onClick = { onNavigate("INVENTORY") }
         )
         NavigationBarItem(
-            icon = { Icon(Icons.Outlined.NotificationsActive, contentDescription = "Alerts") },
-            label = { Text("Alerts") },
-            selected = false,
-            onClick = { onNavigate("ALERTS") }
-        )
-        NavigationBarItem(
             icon = { Icon(Icons.Outlined.Settings, contentDescription = "Settings") },
             label = { Text("Settings") },
             selected = false,
