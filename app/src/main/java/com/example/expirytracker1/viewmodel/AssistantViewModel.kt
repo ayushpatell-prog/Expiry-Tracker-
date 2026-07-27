@@ -30,19 +30,19 @@ class AssistantViewModel : ViewModel() {
                 val itemsList = products.joinToString(", ") { "${it.first} (${it.second})" }
                 val prompt = if (products.size > 1) {
                     "I have multiple products that are about to expire: $itemsList. " +
-                    "Please suggest 2-3 simple and professional recipes that COMBINE as many of these ingredients as possible. " +
+                    "Please provide simple recipes that are easy to make and COMBINE as many of these ingredients as possible. " +
                     "If they cannot be combined reasonably, provide separate suggestions. " +
                     "Format the output strictly as follows for each recipe:\n" +
                     "**Dish Name**\n" +
-                    "**Description:** [A short, elegant description]\n" +
+                    "**Description:** [A short, simple description]\n" +
                     "**Key Ingredients:** [List of main items]\n\n" +
                     "Use double asterisks for bolding as shown above."
                 } else {
                     val (productName, category) = products.first()
-                    "Give me 3 simple and professional recipe suggestions using $productName (Category: $category). " +
+                    "Please provide simple recipes that are easy to make using $productName (Category: $category). " +
                     "Format the output strictly as follows for each recipe:\n" +
                     "**Dish Name**\n" +
-                    "**Description:** [A short, elegant description]\n" +
+                    "**Description:** [A short, simple description]\n" +
                     "**Key Ingredients:** [List of main items]\n\n" +
                     "Use double asterisks for bolding as shown above."
                 }
