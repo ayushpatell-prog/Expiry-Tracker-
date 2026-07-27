@@ -890,7 +890,6 @@ fun InventoryBottomNavigation(onNavigate: (String) -> Unit) {
         val navItems = listOf(
             Triple("Home", Icons.Outlined.Home, "HOME"),
             Triple("Inventory", Icons.Filled.Inventory2, "INVENTORY"),
-            Triple("Alerts", Icons.Outlined.NotificationsActive, "ALERTS"),
             Triple("Settings", Icons.Outlined.Settings, "PROFILE")
         )
         navItems.forEach { (label, icon, route) ->

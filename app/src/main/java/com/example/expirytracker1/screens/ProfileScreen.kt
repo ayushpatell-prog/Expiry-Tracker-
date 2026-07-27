@@ -499,7 +499,6 @@ fun ProfileBottomNavigation(onNavigate: (String) -> Unit) {
         val navItems = listOf(
             Triple("Home", Icons.Outlined.Home, "HOME"),
             Triple("Inventory", Icons.Outlined.Inventory2, "INVENTORY"),
-            Triple("Alerts", Icons.Outlined.NotificationsActive, "ALERTS"),
             Triple("Settings", Icons.Filled.Settings, "PROFILE")
         )
         navItems.forEach { (label, icon, route) ->
