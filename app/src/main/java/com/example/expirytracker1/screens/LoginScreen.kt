@@ -43,6 +43,9 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}, onLoginSuccess: () -> Unit = {})
     var newPasswordForGoogleUser by remember { mutableStateOf("") }
     var linkingLoading by remember { mutableStateOf(false) }
 
+    var showForgotPasswordDialog by remember { mutableStateOf(false) }
+    var resetEmail by remember { mutableStateOf("") }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -131,26 +134,13 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}, onLoginSuccess: () -> Unit = {})
 
                     // Password Field
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Password",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            TextButton(onClick = { }) {
-                                Text(
-                                    "Forgot Password?",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
+                        Text(
+                            text = "Password",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
                             value = password,
                             onValueChange = { password = it },
@@ -178,6 +168,20 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}, onLoginSuccess: () -> Unit = {})
                             ),
                             singleLine = true
                         )
+                        
+                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                            TextButton(onClick = { 
+                                resetEmail = email // Pre-fill with whatever they typed in login
+                                showForgotPasswordDialog = true 
+                            }) {
+                                Text(
+                                    "Forgot Password?",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -277,6 +281,55 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}, onLoginSuccess: () -> Unit = {})
                 }
             }
         }
+    }
+
+    if (showForgotPasswordDialog) {
+        AlertDialog(
+            onDismissRequest = { showForgotPasswordDialog = false },
+            title = { Text("Reset Password", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Enter your email address and we'll send you a link to reset your password.")
+                    OutlinedTextField(
+                        value = resetEmail,
+                        onValueChange = { resetEmail = it },
+                        label = { Text("Email Address") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (resetEmail.isBlank()) {
+                            Toast.makeText(context, "Please enter your email", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        FirebaseAuthManager.resetPassword(
+                            email = resetEmail.trim(),
+                            onSuccess = {
+                                showForgotPasswordDialog = false
+                                Toast.makeText(context, "Reset link sent to your email", Toast.LENGTH_LONG).show()
+                            },
+                            onFailure = { err ->
+                                Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                            }
+                        )
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Send Link")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showForgotPasswordDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
     }
 
     if (showSetPasswordDialog) {
