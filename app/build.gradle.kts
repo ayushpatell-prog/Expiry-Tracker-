@@ -34,6 +34,10 @@ android {
     }
 }
 
+base {
+    archivesName.set("Expiry Tracker")
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
@@ -77,4 +81,3 @@ dependencies {
     implementation("com.github.yalantis:ucrop:2.2.10")
     implementation("com.google.firebase:firebase-ai")
 }
-
