@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
+import kotlinx.coroutines.launch
 import com.example.expirytracker1.ui.theme.DarkGreenPrimary
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.TextGray
@@ -33,9 +34,14 @@ import com.example.expirytracker1.auth.FirebaseAuthManager
 @Composable
 fun LoginScreen(onSignUpClick: () -> Unit = {}, onLoginSuccess: () -> Unit = {}) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    
+    var showSetPasswordDialog by remember { mutableStateOf(false) }
+    var newPasswordForGoogleUser by remember { mutableStateOf("") }
+    var linkingLoading by remember { mutableStateOf(false) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -226,7 +232,23 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}, onLoginSuccess: () -> Unit = {})
 
                     // Google Button
                     OutlinedButton(
-                        onClick = { },
+                        onClick = { 
+                            scope.launch {
+                                GoogleAuthHandler.signIn(
+                                    context = context,
+                                    onSuccess = {
+                                        if (FirebaseAuthManager.isEmailProviderLinked()) {
+                                            onLoginSuccess()
+                                        } else {
+                                            showSetPasswordDialog = true
+                                        }
+                                    },
+                                    onFailure = { error ->
+                                        Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+                                    }
+                                )
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
@@ -255,6 +277,66 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}, onLoginSuccess: () -> Unit = {})
                 }
             }
         }
+    }
+
+    if (showSetPasswordDialog) {
+        AlertDialog(
+            onDismissRequest = { /* Force them to set password or logout */ },
+            title = { Text("Secure Your Account", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("You've signed in with Google. Please set a password to enable email login in the future.")
+                    OutlinedTextField(
+                        value = newPasswordForGoogleUser,
+                        onValueChange = { newPasswordForGoogleUser = it },
+                        label = { Text("New Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+                    if (linkingLoading) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newPasswordForGoogleUser.length < 6) {
+                            Toast.makeText(context, "Password must be at least 6 characters", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        linkingLoading = true
+                        FirebaseAuthManager.linkEmailPassword(
+                            password = newPasswordForGoogleUser,
+                            onSuccess = {
+                                linkingLoading = false
+                                showSetPasswordDialog = false
+                                onLoginSuccess()
+                            },
+                            onFailure = { err ->
+                                linkingLoading = false
+                                Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                            }
+                        )
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !linkingLoading && newPasswordForGoogleUser.isNotBlank()
+                ) {
+                    Text("Set Password")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    FirebaseAuthManager.logout()
+                    showSetPasswordDialog = false
+                }) {
+                    Text("Cancel")
+                }
+            },
+            shape = RoundedCornerShape(24.dp)
+        )
     }
 }
 

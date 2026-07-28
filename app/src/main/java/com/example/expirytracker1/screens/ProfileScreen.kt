@@ -50,8 +50,10 @@ fun ProfileScreen(
     var showChangePasswordDialog by remember { mutableStateOf(false) }
     var showImagePickerDialog by remember { mutableStateOf(false) }
     
-    // Persistent Local Image Path
-    val profileImageFile = File(context.filesDir, "profile_picture.jpg")
+    // Persistent Local Image Path - UNIQUE PER USER
+    val user = FirebaseAuthManager.currentUser()
+    val userId = user?.uid ?: "guest"
+    val profileImageFile = File(context.filesDir, "profile_picture_$userId.jpg")
     var profileImageUri by remember { mutableStateOf<Uri?>(if (profileImageFile.exists()) Uri.fromFile(profileImageFile) else null) }
 
     fun saveImageLocally(uri: Uri) {
@@ -92,7 +94,7 @@ fun ProfileScreen(
     fun createImageUri(): Uri {
         val directory = File(context.cacheDir, "camera_images")
         if (!directory.exists()) directory.mkdirs()
-        val file = File(directory, "profile_${System.currentTimeMillis()}.jpg")
+        val file = File(directory, "profile_${userId}_${System.currentTimeMillis()}.jpg")
         return FileProvider.getUriForFile(context, "com.example.expirytracker1.fileprovider", file)
     }
 
