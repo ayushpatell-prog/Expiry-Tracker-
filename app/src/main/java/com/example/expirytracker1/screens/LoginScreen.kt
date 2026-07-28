@@ -41,6 +41,7 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}, onLoginSuccess: () -> Unit = {})
     
     var showSetPasswordDialog by remember { mutableStateOf(false) }
     var newPasswordForGoogleUser by remember { mutableStateOf("") }
+    var setPasswordVisible by remember { mutableStateOf(false) }
     var linkingLoading by remember { mutableStateOf(false) }
 
     var showForgotPasswordDialog by remember { mutableStateOf(false) }
@@ -343,7 +344,13 @@ fun LoginScreen(onSignUpClick: () -> Unit = {}, onLoginSuccess: () -> Unit = {})
                         value = newPasswordForGoogleUser,
                         onValueChange = { newPasswordForGoogleUser = it },
                         label = { Text("New Password") },
-                        visualTransformation = PasswordVisualTransformation(),
+                        leadingIcon = { Icon(Icons.Default.Lock, null, tint = TextGray) },
+                        trailingIcon = {
+                            IconButton(onClick = { setPasswordVisible = !setPasswordVisible }) {
+                                Icon(if (setPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff, null, tint = TextGray)
+                            }
+                        },
+                        visualTransformation = if (setPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         singleLine = true
