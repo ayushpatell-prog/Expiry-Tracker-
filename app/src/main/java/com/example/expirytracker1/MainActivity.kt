@@ -23,6 +23,10 @@ import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.viewmodel.ProductViewModel
 import com.example.expirytracker1.auth.FirebaseAuthManager
 import com.example.expirytracker1.notifications.NotificationHelper
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.expirytracker1.ui.theme.ThemeMode
+import androidx.compose.ui.platform.LocalContext
+import com.example.expirytracker1.utils.ThemePreference
 
 import com.example.expirytracker1.viewmodel.AssistantViewModel
 
@@ -35,8 +39,19 @@ class MainActivity : ComponentActivity() {
         setContent {
             val productViewModel: ProductViewModel = viewModel()
             val assistantViewModel: AssistantViewModel = viewModel()
-            var darkMode by remember { mutableStateOf(false) }
-            ExpiryTracker1Theme(darkTheme = darkMode) {
+            val context = LocalContext.current
+            val themePreference = remember { ThemePreference(context) }
+
+            var themeMode by remember {
+                mutableStateOf(themePreference.getTheme())
+            }
+            ExpiryTracker1Theme(
+                darkTheme = when (themeMode) {
+                    ThemeMode.LIGHT -> false
+                    ThemeMode.DARK -> true
+                    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                }
+            ) {
                 var currentScreen by remember { 
                     mutableStateOf(if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser != null) "HOME" else "LOGIN")
                 }
@@ -82,8 +97,13 @@ class MainActivity : ComponentActivity() {
                             onNavigate = { currentScreen = it }
                         )
                         "PROFILE" -> ProfileScreen(
-                            darkMode = darkMode,
-                            onDarkModeChange = { darkMode = it },
+                            themeMode = themeMode,
+                            onThemeChange = {
+
+                                themeMode = it
+                                themePreference.saveTheme(it)
+
+                            },
                             onNavigate = { currentScreen = it }
                         )
 

@@ -35,15 +35,16 @@ import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.SageGreenBackground
 import com.example.expirytracker1.ui.theme.TextGray
 import com.example.expirytracker1.auth.FirebaseAuthManager
+import com.example.expirytracker1.ui.theme.ThemeMode
 
 import java.io.FileOutputStream
 
 @Composable
 fun ProfileScreen(
-    darkMode: Boolean,
-    onDarkModeChange: (Boolean) -> Unit,
+    themeMode: ThemeMode,
+    onThemeChange: (ThemeMode) -> Unit,
     onNavigate: (String) -> Unit = {}
-) {
+){
     val context = LocalContext.current
     var showEditNameDialog by remember { mutableStateOf(false) }
     var showChangePasswordDialog by remember { mutableStateOf(false) }
@@ -160,23 +161,36 @@ fun ProfileScreen(
             item {
                 SettingsGroup(title = "APP PREFERENCES") {
                     SettingsItem(
-                        icon = Icons.Outlined.Notifications, 
-                        label = "Notification Settings", 
-                        onClick = { onNavigate("SETTINGS") }
-                    )
-                    SettingsDivider()
-                    SettingsItem(
-                        icon = Icons.Outlined.DarkMode, 
-                        label = "Dark Mode",
+                        icon = Icons.Outlined.DarkMode,
+                        label = "Appearance",
                         showArrow = false,
                         trailingContent = {
-                            Switch(
-                                checked = darkMode,
-                                onCheckedChange = onDarkModeChange,
-                                colors = SwitchDefaults.colors(
-                                    checkedTrackColor = Color(0xFF388E3C)
-                                )
-                            )
+                            Column {
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(
+                                        selected = themeMode == ThemeMode.LIGHT,
+                                        onClick = { onThemeChange(ThemeMode.LIGHT) }
+                                    )
+                                    Text("Light")
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(
+                                        selected = themeMode == ThemeMode.SYSTEM,
+                                        onClick = { onThemeChange(ThemeMode.SYSTEM) }
+                                    )
+                                    Text("System Default")
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(
+                                        selected = themeMode == ThemeMode.DARK,
+                                        onClick = { onThemeChange(ThemeMode.DARK) }
+                                    )
+                                    Text("Dark")
+                                }
+                            }
                         }
                     )
                 }
@@ -537,6 +551,9 @@ fun ProfileBottomNavigation(onNavigate: (String) -> Unit) {
 @Composable
 fun ProfileScreenPreview() {
     ExpiryTracker1Theme(dynamicColor = false) {
-        ProfileScreen(darkMode = false, onDarkModeChange = {})
+        ProfileScreen(
+            themeMode = ThemeMode.SYSTEM,
+            onThemeChange = {}
+        )
     }
 }
