@@ -9,10 +9,15 @@ import com.example.expirytracker1.notifications.NotificationHelper
 import com.example.expirytracker1.notifications.NotificationRepository
 import com.example.expirytracker1.screens.NotificationType
 import com.example.expirytracker1.repository.ProductRepository
+import com.example.expirytracker1.auth.FirebaseAuthManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class ProductViewModel(application: Application) : AndroidViewModel(application) {
@@ -34,21 +39,32 @@ class ProductViewModel(application: Application) : AndroidViewModel(application)
     val error = _error.asStateFlow()
 
     init {
-        loadProducts()
+        observeUserAndLoadProducts()
     }
 
-    private fun loadProducts() {
+    private fun observeUserAndLoadProducts() {
         viewModelScope.launch {
-            _isLoading.value = true
-            repository.getItemsFlow()
-                .catch { e ->
-                    _error.value = "Failed to load products: ${e.message}"
-                    _isLoading.value = false
-                }
-                .collect { items ->
-                    _products.value = items
-                    _isLoading.value = false
-                    checkExpirations(items)
+            FirebaseAuthManager.currentUserFlow
+                .map { it?.uid }
+                .distinctUntilChanged()
+                .collectLatest { uid ->
+                    if (uid != null) {
+                        _isLoading.value = true
+                        repository.getItemsFlow()
+                            .catch { e ->
+                                _error.value = "Failed to load products: ${e.message}"
+                                _isLoading.value = false
+                            }
+                            .collect { items ->
+                                _products.value = items
+                                _isLoading.value = false
+                                checkExpirations(items)
+                            }
+                    } else {
+                        // User logged out, clear products
+                        _products.value = emptyList()
+                        _isLoading.value = false
+                    }
                 }
         }
     }

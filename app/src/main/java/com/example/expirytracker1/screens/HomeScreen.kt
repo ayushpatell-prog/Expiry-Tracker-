@@ -86,11 +86,15 @@ fun HomeScreen(
     
     // Filtering and sorting logic
     val filteredItems = remember(selectedTabIndex, itemsState) {
+        val activeItems = itemsState.filter { it.daysLeft >= 0 }
+        val expiredItems = itemsState.filter { it.daysLeft < 0 }
+        
         when (selectedTabIndex) {
-            0 -> itemsState.sortedBy { it.daysLeft } // Expiring Soon
-            1 -> itemsState // All Items
-            2 -> itemsState.sortedByDescending { it.addedTimestamp } // Recently Added
-            else -> itemsState
+            0 -> activeItems.filter { it.daysLeft in 0..3 }.sortedBy { it.daysLeft } // Expiring Soon
+            1 -> activeItems // All Items (Excluding Expired)
+            2 -> activeItems.sortedByDescending { it.addedTimestamp } // Recently Added
+            3 -> expiredItems.sortedByDescending { it.expiryTimestamp } // Expired Items
+            else -> activeItems
         }
     }
 
@@ -313,8 +317,9 @@ fun HeaderSection(userName: String, subtitle: String, onProfileClick: () -> Unit
     val context = androidx.compose.ui.platform.LocalContext.current
     val user = com.example.expirytracker1.auth.FirebaseAuthManager.currentUser()
     
-    // Check for local profile picture first
-    val localFile = java.io.File(context.filesDir, "profile_picture.jpg")
+    // Check for local profile picture first - UNIQUE PER USER
+    val userId = user?.uid ?: "guest"
+    val localFile = java.io.File(context.filesDir, "profile_picture_$userId.jpg")
     val photoUrl = if (localFile.exists()) android.net.Uri.fromFile(localFile) else user?.photoUrl
 
     Row(
@@ -446,11 +451,11 @@ fun ScanBanner(onScanClick: () -> Unit) {
 @Composable
 fun FilterTabs(selectedTab: Int, onTabSelected: (Int) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val tabs = listOf("Expiring Soon", "All Items", "Recently Added")
+        val tabs = listOf("Expiring Soon", "All Items", "Recently Added", "Expired Items")
         tabs.forEachIndexed { index, title ->
             val isSelected = selectedTab == index
             Surface(
@@ -543,7 +548,11 @@ fun InventoryCard(item: PantryItem) {
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(
-                            text = if (item.daysLeft == 0) "Expires Today" else "${item.daysLeft}d left",
+                            text = when {
+                                item.daysLeft < 0 -> "Expired (${kotlin.math.abs(item.daysLeft)}d ago)"
+                                item.daysLeft == 0 -> "Expires Today"
+                                else -> "${item.daysLeft}d left"
+                            },
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             color = item.statusColor,
                             fontSize = 12.sp,

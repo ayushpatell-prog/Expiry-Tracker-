@@ -32,10 +32,24 @@ data class PantryItem(
     val daysLeft: Int
         get() {
             if (expiryTimestamp == 0L) return 0
-            val diff = expiryTimestamp - System.currentTimeMillis()
-            if (diff <= 0) return 0
-            // Round up to ensure 1.1 days shows as 2 days
-            return kotlin.math.ceil(diff.toDouble() / (1000 * 60 * 60 * 24)).toInt()
+            
+            val today = java.util.Calendar.getInstance().apply {
+                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }
+            
+            val expiry = java.util.Calendar.getInstance().apply {
+                timeInMillis = expiryTimestamp
+                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }
+            
+            val diff = expiry.timeInMillis - today.timeInMillis
+            return (diff / (1000 * 60 * 60 * 24)).toInt()
         }
 
     @get:Exclude
@@ -53,8 +67,9 @@ data class PantryItem(
     @get:Exclude
     val statusColor: Color
         get() = when {
-            daysLeft < 3 -> Color(0xFFD32F2F) // Red
-            daysLeft < 7 -> Color(0xFFFBC02D) // Yellow/Orange
-            else -> Color(0xFF4CAF50) // Green
+            daysLeft < 0 -> Color(0xFFD32F2F) // Expired - Dark Red
+            daysLeft == 0 -> Color(0xFFE64A19) // Today - Orange Red
+            daysLeft < 3 -> Color(0xFFFBC02D) // Soon - Yellow
+            else -> Color(0xFF4CAF50) // Safe - Green
         }
 }

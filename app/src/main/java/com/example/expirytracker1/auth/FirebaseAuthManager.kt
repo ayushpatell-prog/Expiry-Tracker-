@@ -2,12 +2,18 @@ package com.example.expirytracker1.auth
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.EmailAuthProvider
+import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.UserProfileChangeRequest
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 import com.google.firebase.appcheck.FirebaseAppCheck
 import com.google.firebase.storage.FirebaseStorage
 import android.net.Uri
 import android.util.Log
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.onStart
 
 object FirebaseAuthManager {
 
@@ -69,6 +75,39 @@ object FirebaseAuthManager {
     }
 
     fun currentUser() = auth.currentUser
+
+    val currentUserFlow: Flow<FirebaseUser?> = callbackFlow {
+        val listener = FirebaseAuth.AuthStateListener { auth ->
+            trySend(auth.currentUser)
+        }
+        auth.addAuthStateListener(listener)
+        awaitClose { auth.removeAuthStateListener(listener) }
+    }.onStart { emit(auth.currentUser) }
+
+    fun isEmailProviderLinked(): Boolean {
+        return auth.currentUser?.providerData?.any { it.providerId == EmailAuthProvider.PROVIDER_ID } ?: false
+    }
+
+    fun linkEmailPassword(password: String, onSuccess: () -> Unit, onFailure: (String) -> Unit) {
+        val user = auth.currentUser ?: return onFailure("No user logged in")
+        val email = user.email ?: return onFailure("User has no email")
+        val credential = EmailAuthProvider.getCredential(email, password)
+        
+        user.linkWithCredential(credential)
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { onFailure(it.localizedMessage ?: "Linking failed") }
+    }
+
+    fun loginWithGoogle(
+        idToken: String,
+        onSuccess: () -> Unit,
+        onFailure: (String) -> Unit
+    ) {
+        val credential = GoogleAuthProvider.getCredential(idToken, null)
+        auth.signInWithCredential(credential)
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { onFailure(it.localizedMessage ?: "Google Login failed") }
+    }
 
     fun updateProfile(
         fullName: String? = null,

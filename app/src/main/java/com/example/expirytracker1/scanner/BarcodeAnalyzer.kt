@@ -38,16 +38,16 @@ class BarcodeAnalyzer(
     )
     private val textRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-    // Regex for various date formats
+    // Regex for various date formats - Optimized for common labels
     private val datePattern = Pattern.compile(
-        "\\b(\\d{1,2})[./-](\\d{1,2})[./-](\\d{2,4})\\b|" +
-        "\\b(\\d{4})[./-](\\d{1,2})[./-](\\d{1,2})\\b|" +
-        "\\b(\\d{1,2})\\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*[\\s,]*(\\d{2,4})\\b",
+        "\\b(\\d{1,2})[./: -]+(\\d{1,2})[./: -]+(\\d{2,4})\\b|" +
+        "\\b(\\d{4})[./: -]+(\\d{1,2})[./: -]+(\\d{1,2})\\b|" +
+        "\\b(\\d{1,2})[./: -]+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*[./: -]+(\\d{2,4})\\b",
         Pattern.CASE_INSENSITIVE
     )
 
-    private val expiryKeywords = listOf("EXP", "EXPIRY", "BEST BEFORE", "BEST BY", "USE BY", "CONSUME BEFORE", "EXPIRES", "BB")
-    private val mfgKeywords = listOf("PKD", "PACKED", "PACK DATE", "MFD", "MFG", "MANUFACTURED", "PRODUCTION", "MANUFACTURING", "BATCH", "MRP")
+    private val expiryKeywords = listOf("EXP", "EXPIRY", "BEST BEFORE", "BEST BY", "USE BY", "CONSUME BEFORE", "EXPIRES", "BB", "E:", "ED:")
+    private val mfgKeywords = listOf("PKD", "PACKED", "PACK DATE", "MFD", "MFG", "MANUFACTURED", "PRODUCTION", "MANUFACTURING", "BATCH", "MRP", "M:", "MD:")
 
     @OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
@@ -99,8 +99,9 @@ class BarcodeAnalyzer(
             val matcher = datePattern.matcher(cleanLine)
             while (matcher.find()) {
                 val dateStr = matcher.group().trim()
-                var score = 10 
+                if (dateStr.length < 5) continue
 
+                var score = 10 
                 if (expiryKeywords.any { cleanLine.contains(it) }) score += 100
                 if (mfgKeywords.any { cleanLine.contains(it) }) score -= 500
 
@@ -108,22 +109,70 @@ class BarcodeAnalyzer(
             }
         }
 
-        return candidates.filter { it.second > 0 }.maxByOrNull { it.second }?.first
+        Log.d("OCR_DEBUG", "Found candidates: $candidates")
+
+        return when {
+            // Case 1: We found a date with a very high score (explicitly linked to "EXP")
+            candidates.any { it.second > 100 } -> {
+                candidates.filter { it.second > 100 }.maxByOrNull { it.second }?.first
+            }
+            // Case 2: No explicit keywords, but multiple dates exist
+            // Per user request, if multiple dates are found, take the second one (usually EXP after MFD)
+            candidates.size >= 2 -> {
+                candidates[1].first
+            }
+            // Case 3: Only one date found
+            candidates.size == 1 -> {
+                candidates[0].first
+            }
+            else -> null
+        }
     }
 
     private fun normalizeAndFormatDate(dateStr: String): String {
-        // Handle names like 20 JUN 2026
+        // Handle formats like 21/MAY/27 or 20 JUN 2026
         if (dateStr.any { it.isLetter() }) {
             try {
-                val sdfInput = java.text.SimpleDateFormat("dd MMM yyyy", Locale.US)
-                val date = sdfInput.parse(dateStr)
-                if (date != null) {
-                    return java.text.SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(date)
+                // Remove special separators to make parsing easier
+                val cleanDate = dateStr.replace("/", " ").replace("-", " ").replace(".", " ").replace(":", " ")
+                val parts = cleanDate.split("\\s+".toRegex())
+                
+                if (parts.size == 3) {
+                    val day = parts[0].padStart(2, '0')
+                    val monthStr = parts[1].uppercase()
+                    var year = parts[2]
+                    if (year.length == 2) year = "20$year"
+
+                    // Try to parse month manually to be safe
+                    val monthInt = when {
+                        monthStr.startsWith("JAN") -> 0
+                        monthStr.startsWith("FEB") -> 1
+                        monthStr.startsWith("MAR") -> 2
+                        monthStr.startsWith("APR") -> 3
+                        monthStr.startsWith("MAY") -> 4
+                        monthStr.startsWith("JUN") -> 5
+                        monthStr.startsWith("JUL") -> 6
+                        monthStr.startsWith("AUG") -> 7
+                        monthStr.startsWith("SEP") -> 8
+                        monthStr.startsWith("OCT") -> 9
+                        monthStr.startsWith("NOV") -> 10
+                        monthStr.startsWith("DEC") -> 11
+                        else -> -1
+                    }
+
+                    if (monthInt != -1) {
+                        val cal = Calendar.getInstance()
+                        cal.set(year.toInt(), monthInt, day.toInt())
+                        return java.text.SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(cal.time)
+                    }
                 }
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                Log.e("OCR_ERROR", "Error parsing alpha date: $dateStr", e)
+            }
         }
 
-        val match = Regex("(\\d{1,4})[./-](\\d{1,2})[./-](\\d{1,4})").find(dateStr)
+        // Numeric parsing
+        val match = Regex("(\\d{1,4})[./: -]+(\\d{1,2})[./: -]+(\\d{1,4})").find(dateStr)
         if (match != null) {
             val (v1, v2, v3) = match.destructured
             var day = ""
@@ -141,11 +190,9 @@ class BarcodeAnalyzer(
             }
 
             try {
-                val numericSdf = java.text.SimpleDateFormat("d/M/yyyy", Locale.US)
-                val date = numericSdf.parse("$day/$month/$year")
-                if (date != null) {
-                    return java.text.SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(date)
-                }
+                val cal = Calendar.getInstance()
+                cal.set(year.toInt(), month.toInt() - 1, day.toInt())
+                return java.text.SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(cal.time)
             } catch (e: Exception) {}
         }
         return dateStr
