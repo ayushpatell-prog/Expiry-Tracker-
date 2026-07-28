@@ -30,6 +30,8 @@ import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import android.widget.Toast
 import java.io.File
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import com.example.expirytracker1.ui.theme.DarkGreenPrimary
 import com.example.expirytracker1.ui.theme.ExpiryTracker1Theme
 import com.example.expirytracker1.ui.theme.SageGreenBackground
@@ -260,6 +262,9 @@ fun ProfileScreen(
     if (showChangePasswordDialog) {
         var currentPassword by remember { mutableStateOf("") }
         var newPassword by remember { mutableStateOf("") }
+        var currVisible by remember { mutableStateOf(false) }
+        var newVisible by remember { mutableStateOf(false) }
+
         AlertDialog(
             onDismissRequest = { showChangePasswordDialog = false },
             title = { Text("Change Password") },
@@ -269,15 +274,31 @@ fun ProfileScreen(
                         value = currentPassword,
                         onValueChange = { currentPassword = it },
                         label = { Text("Current Password") },
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                        singleLine = true
+                        leadingIcon = { Icon(Icons.Default.Lock, null, tint = TextGray) },
+                        trailingIcon = {
+                            IconButton(onClick = { currVisible = !currVisible }) {
+                                Icon(if (currVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff, null, tint = TextGray)
+                            }
+                        },
+                        visualTransformation = if (currVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
                     )
                     OutlinedTextField(
                         value = newPassword,
                         onValueChange = { newPassword = it },
                         label = { Text("New Password") },
-                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                        singleLine = true
+                        leadingIcon = { Icon(Icons.Default.Lock, null, tint = TextGray) },
+                        trailingIcon = {
+                            IconButton(onClick = { newVisible = !newVisible }) {
+                                Icon(if (newVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff, null, tint = TextGray)
+                            }
+                        },
+                        visualTransformation = if (newVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
                     )
                 }
             },
