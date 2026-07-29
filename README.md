@@ -19,7 +19,6 @@
 [![Retrofit](https://img.shields.io/badge/Retrofit-Networking-48B983?style=for-the-badge)](https://square.github.io/retrofit/)
 [![Architecture](https://img.shields.io/badge/Architecture-MVVM-blueviolet?style=for-the-badge)](#-tech-stack)
 [![GitHub](https://img.shields.io/badge/GitHub-Repo-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com)
-[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](#-license)
 
 </div>
 
@@ -138,7 +137,7 @@ app/src/main/java/com/example/expirytracker1/
 
 ---
 
-## 🚀 Installation
+## 🚀 Developer Setup
 
 <details>
 <summary><b>Click to expand installation steps</b></summary>
