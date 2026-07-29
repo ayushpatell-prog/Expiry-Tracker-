@@ -1,8 +1,8 @@
 <div align="center">
 
-![Expiry Tracker Banner](https://via.placeholder.com/1200x300.png?text=Expiry+Tracker)
-
-# 🥗 Expiry Tracker
+<p align="center">
+  <img src="screenshots/Logo.png" width="120" alt="Expiry Tracker Logo" />
+</p>
 
 ### *Smart Grocery Expiry Management with AI-Powered Recipe Suggestions*
 
@@ -222,11 +222,9 @@ Also make sure to:
 
 ## 👥 Team
 
-| Avatar | Name | Role | GitHub |
-|:---:|---|---|---|
-| ![avatar](https://via.placeholder.com/50) | Your Name | Android Developer | [@your-username](https://github.com/your-username) |
-| ![avatar](https://via.placeholder.com/50) | Contributor Name | UI/UX Designer | [@contributor](https://github.com/contributor) |
-| ![avatar](https://via.placeholder.com/50) | Contributor Name | Backend Developer | [@contributor](https://github.com/contributor) |
+* **Ayush Patel** ([@ayushpatell-prog](https://github.com/ayushpatell-prog))
+* **Jayakrushna Pradhan** ([@jaykrushnapradhan07-source](https://github.com/jaykrushnapradhan07-source))
+* **Hitesh Kumar Rana** ([@ranahitesh0](https://github.com/ranahitesh07))
 
 Contributions are welcome! Feel free to open an issue or submit a pull request. 🎉
 
