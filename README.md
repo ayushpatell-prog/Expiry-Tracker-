@@ -226,13 +226,11 @@ Also make sure to:
 * **Jayakrushna Pradhan** ([@jaykrushnapradhan07-source](https://github.com/jaykrushnapradhan07-source))
 * **Hitesh Kumar Rana** ([@ranahitesh0](https://github.com/ranahitesh07))
 
-Contributions are welcome! Feel free to open an issue or submit a pull request. 🎉
-
 ---
 
 ## 📄 License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+All rights reserved. Proprietary and confidential.
 
 ---
 
