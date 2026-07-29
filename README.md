@@ -65,23 +65,14 @@ What truly sets Expiry Tracker apart is its integration with **Google Gemini AI*
 
 ## 📸 Screenshots
 
-<div align="center">
+| Login Screen | Signup Screen | Home Screen |
+| :---: | :---: | :---: |
+| ![Login Screen](screenshots/Login_Screen.png) | ![Signup Screen](screenshots/Signup_Screen.png) | ![Home Screen](screenshots/Home_Screen.png) |
 
-| Login Screen | Home Screen | Inventory Screen |
-|:---:|:---:|:---:|
-| ![Login Screen](screenshots/login_screen.png) | ![Home](screenshots/home.png) | ![Inventory](screenshots/inventory.png) |
+| Inventory Screen | Notification Screen | Settings Screen |
+| :---: | :---: | :---: |
+| ![Inventory Screen](screenshots/Inventory_Screen.png) | ![Notification Screen](screenshots/Notification_Screen.png) | ![Settings Screen](screenshots/Settings_Screen.png) |
 
-| Barcode Scanner | OCR Expiry Detection | AI Recipe Suggestion |
-|:---:|:---:|:---:|
-| ![Scanner](screenshots/scanner.png) | ![OCR Detection](screenshots/ocr_detection.png) | ![AI Recipe](screenshots/ai_recipe.png) |
-
-| Recipe Details | Profile Screen | Settings Screen |
-|:---:|:---:|:---:|
-| ![Recipe Details](screenshots/recipe_details.png) | ![Profile](screenshots/profile.png) | ![Settings](screenshots/settings.png) |
-
-</div>
-
-> 💡 *Replace the placeholder paths above with actual screenshots stored in a `/screenshots` folder in your repository.*
 
 ---
 
